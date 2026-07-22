@@ -1,14 +1,48 @@
 # MatoryUpperUe
 
-UE UI 自动化测试框架，基于 Matory SDK TCP 协议。
+UE UI 自动化测试框架，基于 Matory SDK TCP 协议，支持多连接协同测试。
 
 ## 特性
 
 - **pytest 集成**：用 pytest 编写和运行 UI 测试
 - **Page Object 模式**：WidgetDescriptor 描述符延迟绑定，提高复用性
+- **多连接**：一个 Session 管理多个 UE 实例，Widget/页面可指定连接
 - **录制回放**：录制操作自动生成 pytest 测试代码
 - **链式调用**：`widget.click().set_enabled(False)` 流畅 API
-- **异常分层**：`WidgetNotFoundError`（定位失败）/ `CommandError`（服务端错误）
+- **异常分层**：`WidgetNotFoundError` / `CommandError` / `ConnectionKeyError`
+
+## 架构
+
+```
+┌─ pytest 运行时 ──────────────────────────────────────┐
+│  session fixture    sessions fixture                  │
+│  (单连接)           (多连接 dict)                     │
+└────────┬──────────────────┬──────────────────────────┘
+         ▼                  ▼
+┌─ Session (会话管理) ─────────────────────────────────┐
+│  _connections: {"default": Conn, "client": Conn}     │
+│  _send_cmd(cmd, args, *, connection=None)            │
+│  find_button / find_text / find_widget / page ...    │
+└────────┬──────────────────────────┬──────────────────┘
+         ▼                          ▼
+┌─ Connection "default" ─┐  ┌─ Connection "client" ──┐
+│  TCP socket + 流缓冲    │  │  TCP socket + 流缓冲    │  L1 协议层
+│  send / recv_line      │  │  send / recv_line      │
+└────────────────────────┘  └────────────────────────┘
+         ▼
+┌─ Widget 元素层 (L2) ────────────────────────────────┐
+│  Widget(session, method, value, connection_key=)     │
+│  exists / click / press / release / set_enabled      │
+│  ├── ButtonWidget  (类型标记)                        │
+│  └── TextWidget   (.text 属性)                       │
+└─────────────────────────────────────────────────────┘
+         ▼
+┌─ Page Object 层 (L3) ──────────────────────────────┐
+│  WidgetDescriptor(id=, widget_class=, connection=)  │
+│  Page(session, *, connection=)                       │
+│  连接优先级: 描述符 > 页面 > Session 默认              │
+└─────────────────────────────────────────────────────┘
+```
 
 ## 安装
 
@@ -85,21 +119,88 @@ with Session() as s:
     rec.generate_code("RecordedPage", "autotests/test_recorded.py")
 ```
 
+## 多连接
+
+一个 Session 可同时连接多个 UE 实例，通过命名连接路由命令：
+
+### 编程方式
+
+```python
+from matory import Session
+
+with Session("127.0.0.1", 2666) as s:
+    # 添加第二个连接
+    s.add_connection("client", "10.0.0.2", 2666)
+
+    # 默认连接操作
+    btn1 = s.find_button(id="3")
+    btn1.click()
+
+    # 指定连接操作
+    btn2 = s.find_button(id="3", connection="client")
+    btn2.click()
+
+    # Page Object 也可指定连接
+    page = s.page(MainPage, connection="client")
+```
+
+### Page Object 中混合连接
+
+```python
+class DualPage(Page):
+    host_btn = WidgetDescriptor(id="1", widget_class=ButtonWidget)
+    client_btn = WidgetDescriptor(id="2", widget_class=ButtonWidget, connection="client")
+
+# 页面级默认 + 描述符级覆盖
+page = session.page(DualPage, connection="host")
+page.host_btn.click()     # → host 连接
+page.client_btn.click()   # → client 连接（描述符覆盖）
+```
+
+### pytest 多端点
+
+```bash
+pytest autotests/ \
+  --matory-host=127.0.0.1 --matory-port=2666 \
+  --matory-endpoints client=10.0.0.2:2666 \
+  -v
+```
+
+用 `sessions` fixture 获取所有连接：
+
+```python
+def test_multi_ue(sessions):
+    default_session = sessions["default"]
+    client_session = sessions["client"]
+```
+
+### 连接管理 API
+
+```python
+session.add_connection("ue2", "10.0.0.3", 2666, set_default=False)
+session.remove_connection("ue2")          # 关闭并移除（不可删默认）
+session.list_connections()                 # → ["default", "client"]
+session.get_connection("client")           # → Connection 对象
+session.default = "client"                 # 切换默认连接
+```
+
 ## API 参考
 
 ### Session
 
 ```python
 with Session(host="127.0.0.1", port=2666, timeout=5.0) as s:
-    s.get_sdk_version()          # → "1.0.0"
-    s.get_engine_version()       # → "5.6.1"
-    s.get_widget_tree()          # → dict
-    s.find_button(id="3")        # → ButtonWidget (找不到抛 WidgetNotFoundError)
-    s.find_text(keyword="标题")   # → TextWidget (找不到抛 WidgetNotFoundError)
-    s.find_widget(id="99")       # → Widget
-    s.page(MainPage)             # → MainPage 实例
-    s.start_record()             # 开始录制
-    s.stop_record()              # 停止录制 → dict
+    s.get_sdk_version()                        # → "1.0.0"
+    s.get_engine_version()                     # → "5.6.1"
+    s.get_widget_tree()                        # → dict
+    s.find_button(id="3")                      # → ButtonWidget
+    s.find_button(id="3", connection="client") # → ButtonWidget (指定连接)
+    s.find_text(keyword="标题")                 # → TextWidget
+    s.find_widget(id="99")                     # → Widget
+    s.page(MainPage)                           # → MainPage 实例
+    s.page(MainPage, connection="client")      # → MainPage (指定连接)
+    s.start_record()                           # 开始录制
+    s.stop_record()                            # 停止录制 → dict
 ```
 
 ### Widget
@@ -118,7 +219,7 @@ widget.name                            # → str (⚠️ 会发网络请求)
 ### 异常
 
 ```python
-from matory.errors import MatoryError, CommandError, WidgetNotFoundError
+from matory.errors import MatoryError, CommandError, WidgetNotFoundError, ConnectionKeyError
 
 try:
     btn = session.find_button(id="999")
@@ -126,6 +227,11 @@ except WidgetNotFoundError as e:
     print(f"找不到: method={e.method}, value={e.value}")
 except CommandError as e:
     print(f"服务端错误: code={e.code}, msg={e.msg}")
+
+try:
+    session.get_connection("nope")
+except ConnectionKeyError as e:
+    print(f"连接不存在: key={e.key}, 可用={e.available}")
 ```
 
 ### WidgetDescriptor
@@ -133,9 +239,11 @@ except CommandError as e:
 ```python
 class MyPage(Page):
     # 三种定位方式
-    btn  = WidgetDescriptor(id="3", widget_class=ButtonWidget)
-    text = WidgetDescriptor(name="TitleLabel", widget_class=TextWidget)
+    btn   = WidgetDescriptor(id="3", widget_class=ButtonWidget)
+    text  = WidgetDescriptor(name="TitleLabel", widget_class=TextWidget)
     panel = WidgetDescriptor(path="/Canvas/Panel")
+    # 指定连接
+    remote_btn = WidgetDescriptor(id="5", widget_class=ButtonWidget, connection="client")
 ```
 
 ## 多页面流程写法
@@ -221,12 +329,12 @@ MatoryUpperUe/
 │   │   ├── protocol.py         #   协议常量 + encode/decode
 │   │   └── connection.py       #   TCP 连接 + 流缓冲
 │   ├── elements/               # L2: 元素层 (Widget 模型与操作)
-│   │   ├── widget.py           #   Widget 基类
+│   │   ├── widget.py           #   Widget 基类 + 连接路由
 │   │   ├── button.py           #   ButtonWidget
 │   │   └── text.py             #   TextWidget
 │   ├── page/                   # L3: 页面层 (Page Object 模式)
 │   │   └── page.py             #   Page + WidgetDescriptor
-│   ├── session.py              # 会话管理
+│   ├── session.py              # 会话管理 + 多连接注册表
 │   ├── recorder.py             # 录制器
 │   ├── pytest_plugin.py        # pytest 插件
 │   └── errors.py               # 异常层次
