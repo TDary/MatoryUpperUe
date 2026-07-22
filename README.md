@@ -120,6 +120,80 @@ class MyPage(Page):
     panel = WidgetDescriptor(path="/Canvas/Panel")
 ```
 
+## 多页面流程写法
+
+核心思路：**一个页面一个 Page Object** → **`session.page()` 切换页面** → **点击 → 等待/断言 → 下一步**
+
+### 1. 每个页面定义一个 Page Object
+
+```python
+# autotests/pages/login_page.py
+from matory import Page, WidgetDescriptor, ButtonWidget, TextWidget
+
+class LoginPage(Page):
+    login_btn = WidgetDescriptor(id="102", widget_class=ButtonWidget)
+    error_text = WidgetDescriptor(id="103", widget_class=TextWidget)
+
+    def wait_loaded(self):
+        assert self.login_btn.exists()
+        return self
+
+    def login(self):
+        self.login_btn.click()
+        return self
+```
+
+```python
+# autotests/pages/lobby_page.py
+class LobbyPage(Page):
+    enter_room_btn = WidgetDescriptor(id="200", widget_class=ButtonWidget)
+    status_text = WidgetDescriptor(id="201", widget_class=TextWidget)
+```
+
+### 2. 用 session.page() 串联流程
+
+```python
+# autotests/test_login.py
+import pytest
+from .pages.login_page import LoginPage
+from .pages.lobby_page import LobbyPage
+
+@pytest.mark.ui
+class TestLoginFlow:
+    def test_login_success(self, session):
+        # 登录页 → 点击登录
+        login = session.page(LoginPage)
+        login.wait_loaded()
+        login.login()
+
+        # 大厅页 → 验证已进入
+        lobby = session.page(LobbyPage)
+        assert lobby.status_text.exists()
+
+    def test_full_flow(self, session):
+        # 登录
+        session.page(LoginPage).login()
+        # 大厅 → 进入房间
+        session.page(LobbyPage).enter_room_btn.click()
+        # 房间 → 开始游戏
+        session.page(RoomPage).start_btn.click()
+```
+
+### 3. 查 Widget ID
+
+写 Page Object 前先查 UE 里的 Widget：
+
+```python
+from matory import Session
+
+with Session("127.0.0.1", 2666) as s:
+    import json
+    # 查整棵 Widget 树
+    print(json.dumps(s.get_widget_tree(), indent=2, ensure_ascii=False))
+    # 查某个 Widget 详情
+    print(s.find_widget(id="3").get_detail())
+```
+
 ## 项目结构
 
 ```
