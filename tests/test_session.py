@@ -1,6 +1,9 @@
 """Tests for Session."""
 
 import json
+import logging
+import os
+import tempfile
 import threading
 
 import pytest
@@ -250,3 +253,97 @@ def test_find_button_with_connection(mock_conn):
     btn = session.find_button(id="50", connection="ue2")
     assert btn._connection_key == "ue2"
     assert len(mock_conn2._sent) == 1
+
+
+# ── File logging tests ──
+
+
+def test_session_with_log_file_creates_file_handler():
+    """Session(log_file=...) should add a FileHandler to the 'matory' logger."""
+    parent_logger = logging.getLogger("matory")
+    # Remove any pre-existing FileHandlers to start clean
+    parent_logger.handlers = [
+        h for h in parent_logger.handlers if not isinstance(h, logging.FileHandler)
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_path = os.path.join(tmpdir, "test.log")
+        session = Session.__new__(Session)
+        session._connections = {}
+        session._default_key = "default"
+        session._req_id = 0
+        session._lock = threading.Lock()
+        Session._setup_file_logging(log_path, "DEBUG")
+
+        # Verify a FileHandler was added
+        file_handlers = [h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)]
+        assert len(file_handlers) >= 1
+
+        # Verify the handler points to the right file
+        fh = file_handlers[-1]
+        assert fh.baseFilename == os.path.abspath(log_path)
+
+        # Verify logger level is set
+        assert parent_logger.level == logging.DEBUG
+
+        # Clean up: remove the handler we just added
+        parent_logger.removeHandler(fh)
+        fh.close()
+
+
+def test_session_without_log_file_has_no_file_handler():
+    """Session without log_file should not add any FileHandler."""
+    parent_logger = logging.getLogger("matory")
+    # Record current FileHandlers
+    before = [h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)]
+
+    Session._setup_file_logging(None, "DEBUG")
+
+    after = [h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)]
+    assert len(after) == len(before)
+
+
+def test_session_log_level_set_correctly():
+    """Session(log_level='INFO') should set the matory logger to INFO."""
+    parent_logger = logging.getLogger("matory")
+    # Remove any pre-existing FileHandlers to start clean
+    parent_logger.handlers = [
+        h for h in parent_logger.handlers if not isinstance(h, logging.FileHandler)
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_path = os.path.join(tmpdir, "test_level.log")
+        Session._setup_file_logging(log_path, "INFO")
+
+        assert parent_logger.level == logging.INFO
+
+        # Clean up
+        file_handlers = [h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)]
+        for fh in file_handlers:
+            parent_logger.removeHandler(fh)
+            fh.close()
+
+
+def test_session_no_duplicate_file_handlers():
+    """Creating Session twice with log_file should not add duplicate FileHandlers."""
+    parent_logger = logging.getLogger("matory")
+    # Remove any pre-existing FileHandlers to start clean
+    parent_logger.handlers = [
+        h for h in parent_logger.handlers if not isinstance(h, logging.FileHandler)
+    ]
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        log_path = os.path.join(tmpdir, "test_dupes.log")
+        Session._setup_file_logging(log_path, "DEBUG")
+        count_after_first = len([h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)])
+
+        Session._setup_file_logging(log_path, "DEBUG")
+        count_after_second = len([h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)])
+
+        assert count_after_second == count_after_first
+
+        # Clean up
+        file_handlers = [h for h in parent_logger.handlers if isinstance(h, logging.FileHandler)]
+        for fh in file_handlers:
+            parent_logger.removeHandler(fh)
+            fh.close()

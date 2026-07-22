@@ -52,3 +52,15 @@ def test_sessions_fixture_exists(pytester):
     result = pytester.runpytest("--matory-host=127.0.0.1", "--matory-port=9999", "-v")
     # Will fail to connect, but fixture should be found
     result.stdout.fnmatch_lines(["*Connection*Error*"])
+
+
+def test_plugin_registers_log_file_option(pytester):
+    """Plugin should add --matory-log-file."""
+    result = pytester.runpytest("--help")
+    result.stdout.fnmatch_lines(["*--matory-log-file*"])
+
+
+def test_plugin_registers_log_level_option(pytester):
+    """Plugin should add --matory-log-level."""
+    result = pytester.runpytest("--help")
+    result.stdout.fnmatch_lines(["*--matory-log-level*"])

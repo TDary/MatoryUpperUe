@@ -3,7 +3,7 @@
 Provides:
 - ``session`` fixture (session-scoped, single default connection)
 - ``sessions`` fixture (session-scoped, dict of named Sessions)
-- CLI options: --matory-host, --matory-port, --matory-timeout, --matory-endpoints
+- CLI options: --matory-host, --matory-port, --matory-timeout, --matory-endpoints, --matory-log-file, --matory-log-level
 - ``ui`` marker
 """
 
@@ -40,6 +40,18 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         metavar="NAME=HOST:PORT",
         help="Additional named endpoints (repeatable), e.g. client=10.0.0.2:2666",
     )
+    group.addoption(
+        "--matory-log-file",
+        default=None,
+        metavar="PATH",
+        help="Path to a log file for matory framework logs (default: no file logging)",
+    )
+    group.addoption(
+        "--matory-log-level",
+        default="DEBUG",
+        metavar="LEVEL",
+        help="Logging level for file logging (default: DEBUG)",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -52,7 +64,9 @@ def session(request: pytest.FixtureRequest) -> Session:
     host = request.config.getoption("--matory-host")
     port = request.config.getoption("--matory-port")
     timeout = request.config.getoption("--matory-timeout")
-    s = Session(host, port, timeout)
+    log_file = request.config.getoption("--matory-log-file")
+    log_level = request.config.getoption("--matory-log-level")
+    s = Session(host, port, timeout, log_file=log_file, log_level=log_level)
 
     # Register additional connections from --matory-endpoints
     _register_endpoints(s, request)
@@ -71,8 +85,10 @@ def sessions(request: pytest.FixtureRequest) -> dict[str, Session]:
     host = request.config.getoption("--matory-host")
     port = request.config.getoption("--matory-port")
     timeout = request.config.getoption("--matory-timeout")
+    log_file = request.config.getoption("--matory-log-file")
+    log_level = request.config.getoption("--matory-log-level")
 
-    primary = Session(host, port, timeout)
+    primary = Session(host, port, timeout, log_file=log_file, log_level=log_level)
     _register_endpoints(primary, request)
 
     result: dict[str, Session] = {"default": primary}
@@ -89,7 +105,7 @@ def sessions(request: pytest.FixtureRequest) -> dict[str, Session]:
                 f"Invalid --matory-endpoints format: {ep!r}. "
                 f"Expected NAME=HOST:PORT (e.g. client=10.0.0.2:2666)"
             )
-        secondary = Session(ep_host, ep_port, timeout)
+        secondary = Session(ep_host, ep_port, timeout, log_file=log_file, log_level=log_level)
         result[name] = secondary
 
     yield result

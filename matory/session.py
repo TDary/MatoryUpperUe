@@ -30,11 +30,13 @@ class Session:
             btn.click()
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 2666, timeout: float = 5.0) -> None:
+    def __init__(self, host: str = "127.0.0.1", port: int = 2666, timeout: float = 5.0,
+                 *, log_file: str | None = None, log_level: str = "DEBUG") -> None:
         self._connections: dict[str, Connection] = {}
         self._default_key: str = "default"
         self._req_id = 0
         self._lock = threading.Lock()
+        self._setup_file_logging(log_file, log_level)
         self.add_connection("default", host, port, timeout, set_default=True)
 
     def __enter__(self) -> Session:
@@ -42,6 +44,31 @@ class Session:
 
     def __exit__(self, *exc: Any) -> None:
         self.close()
+
+    # ── Logging ──
+
+    @staticmethod
+    def _setup_file_logging(log_file: str | None, log_level: str) -> None:
+        """Configure a FileHandler on the ``matory`` logger if *log_file* is given.
+
+        Children like ``matory.session`` and ``matory.connection`` inherit the
+        handler via propagation.  Duplicate handlers are avoided by checking
+        the existing handler list.
+        """
+        if log_file is None:
+            return
+        parent_logger = logging.getLogger("matory")
+        parent_logger.setLevel(log_level.upper())
+        # Avoid duplicate handlers if Session is created multiple times
+        for h in parent_logger.handlers:
+            if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None):
+                # FileHandler already present — just ensure level is set
+                parent_logger.setLevel(log_level.upper())
+                return
+        fh = logging.FileHandler(log_file, encoding="utf-8")
+        fh.setLevel(log_level.upper())
+        fh.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
+        parent_logger.addHandler(fh)
 
     # ── Connection registry ──
 
