@@ -20,8 +20,10 @@ L3 页面层 (page/)     →  Page Object 模式
 - `autotests/` — 自动化用例目录
   - `autotests/pages/` — Page Object 定义（每个页面一个文件）
   - `autotests/test_*.py` — 测试用例（按流程分文件）
+  - `autotests/test_multiplayer.py` — 联机协同用例（用 game_session fixture）
 - `tests/` — 框架自身的单元测试
 - 业务用例只放 `autotests/`，不要放 `tests/`
+- 单 UE 用例用 `session` fixture，多 UE 联机用 `game_session` fixture
 
 ## 代码规范
 
@@ -48,10 +50,13 @@ L3 页面层 (page/)     →  Page Object 模式
 # 框架单元测试（无需 UE 实例）
 pytest tests/ -k "not test_example" -v
 
-# 自动化用例（需要 UE 实例运行 SDK）
+# 单 UE 自动化用例
 pytest autotests/ --matory-host=127.0.0.1 --matory-port=2666 -v
 
-# 多端点
+# 多 UE 联机用例
+pytest autotests/test_multiplayer.py --matory-clients=4 --matory-client-base-port=2667 -v
+
+# pytest 多端点（通用方式）
 pytest autotests/ --matory-endpoints client=10.0.0.2:2666 -v
 ```
 
