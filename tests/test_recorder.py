@@ -1,17 +1,10 @@
 """Tests for Recorder."""
 
 from tests.helpers import MockConnection
+from tests.conftest import make_session as _make_session
 from matory.elements.button import ButtonWidget
 from matory.elements.widget import Widget
 from matory.recorder import Recorder, Step
-from matory.session import Session
-
-
-def _make_session(mock_conn):
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
-    return session
 
 
 def test_step_creation():
@@ -137,20 +130,20 @@ def test_recorder_generate_code_numeric_id(tmp_path):
 
 
 def test_recorder_stop_restores_send_cmd(mock_conn):
-    """After stop(), the session's _send_cmd should be restored and functional."""
+    """After stop(), the send hook should be unregistered and session functional."""
     mock_conn.add_response(data=None)
     session = _make_session(mock_conn)
 
     rec = Recorder(session)
     rec.start()
-    assert session._send_cmd.__name__ == "patched_send_cmd"
+    assert rec._hook in session._send_hooks
 
     # Use the click that consumes the mock response above
     btn = ButtonWidget(session, "id", "1")
     btn.click()
 
     rec.stop()
-    assert session._send_cmd.__name__ == "_send_cmd"
+    assert rec._hook not in session._send_hooks
 
     # Verify it still works after stop
     mock_conn.add_response(data="1.0.0")
@@ -199,18 +192,17 @@ def test_recorder_generate_code_with_connection(tmp_path):
 
 
 def test_recorder_double_start_no_op(mock_conn):
-    """Calling start() twice without stop() should be a no-op, not corrupt _send_cmd."""
+    """Calling start() twice without stop() should be a no-op."""
     mock_conn.add_response(data=None)
     session = _make_session(mock_conn)
 
     rec = Recorder(session)
     rec.start()
-    original = rec._original_send_cmd
+    hook_count = len(session._send_hooks)
 
-    # Second start() should be a no-op
+    # Second start() should be a no-op — hook not added twice
     rec.start()
-    assert rec._original_send_cmd is original  # still points to the real method
+    assert len(session._send_hooks) == hook_count
 
     rec.stop()
-    # After stop, _send_cmd should be the original, not the patch
-    assert session._send_cmd.__name__ == "_send_cmd"
+    assert rec._hook not in session._send_hooks

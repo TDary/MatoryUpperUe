@@ -39,6 +39,7 @@ class Session:
         self._closed = False
         self._health_thread: threading.Thread | None = None
         self._health_stop = threading.Event()
+        self._send_hooks: list[Callable[..., None]] = []
         self._setup_file_logging(log_file, log_level)
         self.add_connection("default", host, port, timeout, set_default=True)
 
@@ -155,9 +156,26 @@ class Session:
             self._health_thread = None
         if not hasattr(self, "_health_stop"):
             self._health_stop = threading.Event()
+        if not hasattr(self, "_send_hooks"):
+            self._send_hooks = []
         self._connections[self._default_key] = value
 
     # ── Internal helpers ──
+
+    def add_send_hook(self, hook: Callable[..., None]) -> None:
+        """Register a callback invoked before every ``_send_cmd`` dispatch.
+
+        The hook receives ``(cmd, args, connection)`` — the same arguments
+        passed to ``_send_cmd``.  Hooks must not raise exceptions.
+        """
+        self._send_hooks.append(hook)
+
+    def remove_send_hook(self, hook: Callable[..., None]) -> None:
+        """Remove a previously registered send hook."""
+        try:
+            self._send_hooks.remove(hook)
+        except ValueError:
+            pass
 
     def _next_req_id(self) -> int:
         """Return the next incrementing request ID. Thread-safe."""
@@ -172,6 +190,10 @@ class Session:
         Uses Connection.send_and_recv() to atomically send and receive,
         preventing interleaved requests from other threads.
 
+        Any registered send hooks (see :meth:`add_send_hook` /
+        :meth:`remove_send_hook`) are called before dispatching the
+        command.
+
         Raises:
             MatoryError: If the session has been closed.
         """
@@ -179,6 +201,9 @@ class Session:
             raise MatoryError("Session is closed")
         if args is None:
             args = {}
+        # Notify hooks (e.g. Recorder) before dispatching
+        for hook in self._send_hooks:
+            hook(cmd, args, connection)
         conn = self.get_connection(connection)
         conn_key = connection or self._default_key
         req_id = self._next_req_id()

@@ -20,7 +20,7 @@ class Step:
 
 
 # Maps server command names to human-friendly action names
-_INTERACTION_CMPS: dict[str, str] = {
+_INTERACTION_CMDS: dict[str, str] = {
     "ClickWidget": "click",
     "PressWidget": "press",
     "ReleaseWidget": "release",
@@ -31,9 +31,10 @@ _INTERACTION_CMPS: dict[str, str] = {
 class Recorder:
     """Wraps a Session to record widget interactions for code generation.
 
-    Uses instance-level interception on the Session rather than
-    monkey-patching the Widget class, so multiple Recorders can
-    coexist safely.
+    Uses Session's send-hook mechanism (``add_send_hook`` /
+    ``remove_send_hook``) to intercept commands without monkey-patching,
+    so multiple Recorders can coexist safely and the interception is
+    robust against ``_send_cmd`` signature changes.
 
     Usage::
 
@@ -48,53 +49,43 @@ class Recorder:
         self._session = session
         self._steps: list[Step] = []
         self._recording = False
-        self._original_send_cmd = None
+        self._hook = self._on_send
 
     @property
     def steps(self) -> list[Step]:
         """The list of recorded steps."""
         return self._steps
 
+    def _on_send(self, cmd: str, args: dict[str, Any], connection: str | None) -> None:
+        """Send-hook callback: record interaction commands."""
+        if cmd in _INTERACTION_CMDS and self._recording:
+            action = _INTERACTION_CMDS[cmd]
+            method = args.get("method", "")
+            value = args.get("value", "")
+            step = Step(
+                action=action,
+                method=method,
+                value=value,
+                args=args,
+                connection=connection,
+            )
+            self._steps.append(step)
+
     def start(self) -> None:
         """Start recording widget interactions.
 
-        If already recording, this is a no-op (prevents double-start
-        from corrupting the original ``_send_cmd`` reference).
+        If already recording, this is a no-op.
         """
         if self._recording:
             return
         self._recording = True
         self._steps.clear()
-        # Intercept at the Session level (instance-level, not class-level)
-        self._original_send_cmd = self._session._send_cmd
-        original = self._original_send_cmd
-        recorder_self = self
-
-        def patched_send_cmd(cmd: str, args: dict[str, Any] | None = None,
-                             *, connection: str | None = None) -> dict:
-            if cmd in _INTERACTION_CMPS and recorder_self._recording:
-                action = _INTERACTION_CMPS[cmd]
-                # Extract method/value from args (all interaction commands include them)
-                method = args.get("method", "") if args else ""
-                value = args.get("value", "") if args else ""
-                step = Step(
-                    action=action,
-                    method=method,
-                    value=value,
-                    args=args or {},
-                    connection=connection,
-                )
-                recorder_self._steps.append(step)
-            return original(cmd, args, connection=connection)
-
-        self._session._send_cmd = patched_send_cmd  # type: ignore[assignment]
+        self._session.add_send_hook(self._hook)
 
     def stop(self) -> None:
-        """Stop recording and restore the original Session._send_cmd."""
+        """Stop recording and unregister the send hook."""
         self._recording = False
-        if self._original_send_cmd is not None:
-            self._session._send_cmd = self._original_send_cmd  # type: ignore[assignment]
-            self._original_send_cmd = None
+        self._session.remove_send_hook(self._hook)
 
     def render_code(self, class_name: str) -> str:
         """Render generated pytest test code as a string.

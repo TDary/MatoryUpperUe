@@ -15,15 +15,7 @@ from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
 from matory.errors import CommandError, WidgetNotFoundError, ConnectionKeyError
 from matory.session import Session
-
-
-def _make_session(mock_conn):
-    """Create a Session with a mock connection."""
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
-    session._closed = False
-    return session
+from tests.conftest import make_session as _make_session
 
 
 def test_get_sdk_version(mock_conn):
@@ -394,3 +386,21 @@ def test_health_check_start_stop(mock_conn):
     assert session._health_thread.is_alive()
     session.stop_health_check()
     assert session._health_thread is None
+
+
+def test_wait_until_timeout_raises(mock_conn):
+    """wait_until should raise TimeoutError when predicate never becomes True."""
+    session = _make_session(mock_conn)
+    with pytest.raises(TimeoutError, match="timed out"):
+        session.wait_until(lambda: False, timeout=0.1, interval=0.05)
+
+
+def test_wait_until_succeeds(mock_conn):
+    """wait_until should return when predicate becomes True."""
+    session = _make_session(mock_conn)
+    counter = {"n": 0}
+    def eventually_true():
+        counter["n"] += 1
+        return counter["n"] >= 3
+    session.wait_until(eventually_true, timeout=2.0, interval=0.05)
+    assert counter["n"] >= 3

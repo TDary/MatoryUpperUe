@@ -160,9 +160,20 @@ class Connection:
             return self._recv_line_unlocked()
 
     def close(self) -> None:
-        """Close the underlying socket. Safe to call multiple times."""
-        with self._lock:
-            if self._sock is not None:
-                logger.info("Closing connection to %s:%d", self._host, self._port)
-                self._sock.close()
-                self._sock = None
+        """Close the underlying socket. Safe to call multiple times.
+
+        Closes the socket directly without acquiring the lock so that
+        a blocked ``send_and_recv`` call on another thread will be
+        interrupted (the OS raises OSError on the closed socket).
+        """
+        # Read _sock without lock first to avoid deadlocking with
+        # a concurrent send_and_recv.  Closing a socket from another
+        # thread is safe and causes OSError in the blocked thread.
+        sock = self._sock
+        if sock is not None:
+            logger.info("Closing connection to %s:%d", self._host, self._port)
+            self._sock = None
+            try:
+                sock.close()
+            except OSError:
+                pass

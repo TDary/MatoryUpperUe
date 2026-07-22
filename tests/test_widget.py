@@ -3,16 +3,14 @@
 import json
 
 from tests.helpers import MockConnection
+from tests.conftest import make_session as _make_session
 from matory.client.protocol import Cmd, Method, Key, Button
 from matory.elements.widget import Widget
-from matory.session import Session
 
 
 def _make_widget(mock_conn, method="id", value="42"):
     """Helper to create a Widget backed by a mock connection."""
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
+    session = _make_session(mock_conn)
     return Widget(session, method, value)
 
 
@@ -124,11 +122,8 @@ def test_widget_with_connection_key(mock_conn):
     """Widget with connection_key stores it and routes through named connection."""
     mock_conn2 = MockConnection()
     mock_conn2.add_response(data=None)
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._connections = {"default": mock_conn, "ue2": mock_conn2}
-    session._default_key = "default"
-    session._req_id = 0
+    session = _make_session(mock_conn)
+    session._connections["ue2"] = mock_conn2
     w = Widget(session, "id", "50", connection_key="ue2")
     assert w._connection_key == "ue2"
     w.click()
@@ -141,3 +136,30 @@ def test_widget_backward_compat_no_connection_key(mock_conn):
     """Old-style Widget(session, method, value) still works."""
     w = _make_widget(mock_conn)
     assert w._connection_key is None
+
+
+def test_widget_wait_until_timeout(mock_conn):
+    """Widget.wait_until should raise TimeoutError when predicate never True."""
+    import pytest
+    w = _make_widget(mock_conn)
+    with pytest.raises(TimeoutError, match="timed out"):
+        w.wait_until(lambda _: False, timeout=0.1, interval=0.05)
+
+
+def test_widget_wait_until_succeeds(mock_conn):
+    """Widget.wait_until returns self when predicate becomes True."""
+    counter = {"n": 0}
+    def eventually_true(w):
+        counter["n"] += 1
+        return counter["n"] >= 2
+    w = _make_widget(mock_conn)
+    result = w.wait_until(eventually_true, timeout=2.0, interval=0.05)
+    assert result is w
+
+
+def test_widget_wait_exists(mock_conn):
+    """Widget.wait_exists polls exists() until True."""
+    mock_conn.add_response(data=True)
+    w = _make_widget(mock_conn)
+    result = w.wait_exists(timeout=1.0, interval=0.05)
+    assert result is w

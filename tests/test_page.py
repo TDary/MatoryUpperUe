@@ -1,18 +1,11 @@
 """Tests for Page and WidgetDescriptor."""
 
 from tests.helpers import MockConnection
+from tests.conftest import make_session as _make_session
 from matory.elements.button import ButtonWidget
 from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
 from matory.page.page import Page, WidgetDescriptor
-from matory.session import Session
-
-
-def _make_session(mock_conn):
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
-    return session
 
 
 def test_widget_descriptor_by_id(mock_conn):

@@ -30,7 +30,11 @@ class WidgetNotFoundError(MatoryError):
     def __init__(self, method: str, value: str) -> None:
         self.method = method
         self.value = value
-        super().__init__(f"WidgetNotFoundError(method={method!r}, value={value!r})")
+        super().__init__(
+            f"WidgetNotFoundError(method={method!r}, value={value!r}). "
+            f"Use widget.wait_exists(timeout=...) to wait for the widget to appear, "
+            f"or session.get_widget_tree() to inspect available widgets."
+        )
 
 
 class ConnectionKeyError(MatoryError):
@@ -45,12 +49,18 @@ class ConnectionKeyError(MatoryError):
         self.key = key
         self.available = available
         super().__init__(
-            f"ConnectionKeyError(key={key!r}, available={available!r})"
+            f"ConnectionKeyError(key={key!r}, available={available!r}). "
+            f"Use session.add_connection({key!r}, host, port) to register it, "
+            f"or session.list_connections() to see all keys."
         )
 
 
 class MatoryConnectionError(MatoryError):
-    """TCP connection to the UE SDK server failed or was lost."""
+    """TCP connection to the UE SDK server failed or was lost.
+
+    Tip: Use ``session.start_health_check()`` to monitor connection
+    liveness in long-running test sessions.
+    """
 
     def __init__(self, message: str = "Connection error") -> None:
         super().__init__(message)
