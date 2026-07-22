@@ -6,6 +6,13 @@ from matory.recorder import Recorder, Step
 from matory.session import Session
 
 
+def _make_session(mock_conn):
+    session = Session.__new__(Session)
+    session._conn = mock_conn
+    session._req_id = 0
+    return session
+
+
 def test_step_creation():
     step = Step(action="click", method="id", value="42", args={"simulate": False, "button": "left"})
     assert step.action == "click"
@@ -15,9 +22,7 @@ def test_step_creation():
 
 def test_recorder_records_click(mock_conn):
     mock_conn.add_response(data=None)
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
+    session = _make_session(mock_conn)
 
     rec = Recorder(session)
     rec.start()
@@ -36,9 +41,7 @@ def test_recorder_records_multiple_actions(mock_conn):
     for _ in range(3):
         mock_conn.add_response(data=None)
 
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
+    session = _make_session(mock_conn)
 
     rec = Recorder(session)
     rec.start()
@@ -57,9 +60,7 @@ def test_recorder_records_multiple_actions(mock_conn):
 
 def test_recorder_not_recording_when_stopped(mock_conn):
     mock_conn.add_response(data=None)
-    session = Session.__new__(Session)
-    session._conn = mock_conn
-    session._req_id = 0
+    session = _make_session(mock_conn)
 
     rec = Recorder(session)
     # Don't call start()
@@ -88,6 +89,8 @@ def test_recorder_generate_code(tmp_path):
     assert "SettingsBtn" in code
     assert "def test_recorded_flow" in code
     assert "click" in code
+    # Should use explicit imports, not wildcard
+    assert "from matory.page.page import Page, WidgetDescriptor" in code
 
 
 def test_recorder_generate_code_aggregates_widgets(tmp_path):
@@ -107,6 +110,48 @@ def test_recorder_generate_code_aggregates_widgets(tmp_path):
     code = output.read_text(encoding="utf-8")
     # Should have exactly one descriptor for LoginBtn
     assert code.count("LoginBtn") >= 2  # descriptor + usage(s)
-    # Count descriptor lines (WidgetDescriptor lines)
-    descriptor_count = code.count("WidgetDescriptor")
-    assert descriptor_count == 1  # deduplicated
+    # Should have exactly one descriptor line for LoginBtn (not counting import)
+    descriptor_lines = [l for l in code.splitlines() if "WidgetDescriptor" in l and "=" in l and "import" not in l]
+    assert len(descriptor_lines) == 1  # deduplicated
+
+
+def test_recorder_generate_code_numeric_id(tmp_path):
+    """Numeric widget IDs should generate valid Python attribute names."""
+    steps = [
+        Step(action="click", method="id", value="3", args={"simulate": False, "button": "left"}),
+    ]
+
+    rec = Recorder.__new__(Recorder)
+    rec._steps = steps
+    rec._recording = False
+
+    output = tmp_path / "test_recorded.py"
+    rec.generate_code("RecordedPage", str(output))
+
+    code = output.read_text(encoding="utf-8")
+    # Should prefix with "widget_" for numeric IDs
+    assert "widget_3" in code
+    # The generated code should be valid Python
+    compile(code, str(output), "exec")
+
+
+def test_recorder_stop_restores_send_cmd(mock_conn):
+    """After stop(), the session's _send_cmd should be restored and functional."""
+    mock_conn.add_response(data=None)
+    session = _make_session(mock_conn)
+
+    rec = Recorder(session)
+    rec.start()
+    assert session._send_cmd.__name__ == "patched_send_cmd"
+
+    # Use the click that consumes the mock response above
+    btn = ButtonWidget(session, "id", "1")
+    btn.click()
+
+    rec.stop()
+    assert session._send_cmd.__name__ == "_send_cmd"
+
+    # Verify it still works after stop
+    mock_conn.add_response(data="1.0.0")
+    resp = session.get_sdk_version()
+    assert resp == "1.0.0"

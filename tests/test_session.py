@@ -6,7 +6,7 @@ from matory.client.protocol import Cmd, Key, Method
 from matory.elements.button import ButtonWidget
 from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
-from matory.errors import CommandError
+from matory.errors import CommandError, WidgetNotFoundError
 from matory.session import Session
 
 
@@ -42,14 +42,17 @@ def test_find_button_by_id(mock_conn):
     session = _make_session(mock_conn)
     btn = session.find_button(id="42")
     assert isinstance(btn, ButtonWidget)
-    assert btn.id == "42"
+    assert btn.locator_value == "42"
 
 
-def test_find_button_by_name(mock_conn):
+def test_find_button_sends_locator(mock_conn):
+    """find_button should pass the locator args to the server."""
     mock_conn.add_response(data=[{"id": 42, "name": "LoginBtn", "type": "Button"}])
     session = _make_session(mock_conn)
-    btn = session.find_button(name="LoginBtn")
-    assert isinstance(btn, ButtonWidget)
+    session.find_button(name="LoginBtn")
+    sent = json.loads(mock_conn._sent[0])
+    assert sent["args"][Key.METHOD] == "name"
+    assert sent["args"][Key.VALUE] == "LoginBtn"
 
 
 def test_find_text(mock_conn):
@@ -66,14 +69,15 @@ def test_find_widget(mock_conn):
     assert isinstance(w, Widget)
 
 
-def test_find_button_no_match_raises(mock_conn):
+def test_find_button_no_match_raises_widget_not_found(mock_conn):
     mock_conn.add_response(data=[])
     session = _make_session(mock_conn)
     try:
         session.find_button(id="999")
-        assert False, "Should have raised ValueError"
-    except ValueError as e:
-        assert "999" in str(e)
+        assert False, "Should have raised WidgetNotFoundError"
+    except WidgetNotFoundError as e:
+        assert e.method == "id"
+        assert e.value == "999"
 
 
 def test_page_factory(mock_conn):

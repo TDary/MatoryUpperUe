@@ -85,15 +85,14 @@ class Session:
     def find_button(self, *, id: str | None = None, name: str | None = None, path: str | None = None) -> ButtonWidget:
         """Find the first button matching the locator.
 
-        Raises ``ValueError`` if no button is found.
+        Raises ``WidgetNotFoundError`` if no button is found.
         """
         method, value = self._resolve_method_value(id, name, path)
-        # If locating by id/name/path directly, first query button list
-        resp = self._send_cmd(Cmd.FIND_BUTTONS, {})
+        resp = self._send_cmd(Cmd.FIND_BUTTONS, {Key.METHOD: method, Key.VALUE: value})
         buttons = resp.get("data", [])
         if not isinstance(buttons, list) or not buttons:
-            raise ValueError(f"No buttons found for locator: {method}={value}")
-        # Use the first matching button's id for the widget
+            from matory.errors import WidgetNotFoundError
+            raise WidgetNotFoundError(method=method, value=value)
         first = buttons[0]
         widget_id = str(first.get("id", value))
         return ButtonWidget(self, Method.ID, widget_id)
@@ -101,9 +100,11 @@ class Session:
     def find_text(self, *, keyword: str = "", id: str | None = None, name: str | None = None) -> TextWidget:
         """Find the first text widget matching the query.
 
-        Raises ``ValueError`` if no text widget is found.
+        Raises ``WidgetNotFoundError`` if no text widget is found.
         """
-        args = {Key.KEYWORD: keyword}
+        args: dict[str, Any] = {}
+        if keyword:
+            args[Key.KEYWORD] = keyword
         if id is not None:
             args[Key.METHOD] = Method.ID
             args[Key.VALUE] = id
@@ -113,7 +114,8 @@ class Session:
         resp = self._send_cmd(Cmd.FIND_TEXT, args)
         texts = resp.get("data", [])
         if not isinstance(texts, list) or not texts:
-            raise ValueError(f"No text widgets found for keyword={keyword!r}, id={id!r}, name={name!r}")
+            from matory.errors import WidgetNotFoundError
+            raise WidgetNotFoundError(method="keyword", value=keyword)
         first = texts[0]
         widget_id = str(first.get("id", ""))
         return TextWidget(self, Method.ID, widget_id)
@@ -144,10 +146,15 @@ class Session:
 
     def disconnect(self) -> None:
         """Send Disconnect command and close the connection."""
+        exc = None
         try:
             self._send_cmd(Cmd.DISCONNECT, {})
+        except Exception as e:
+            exc = e
         finally:
             self.close()
+        if exc is not None:
+            raise exc
 
     def close(self) -> None:
         """Close the connection without sending Disconnect."""

@@ -28,9 +28,10 @@ L3 页面层 (page/)     →  Page Object 模式
 - Python 3.10+，使用 `from __future__ import annotations`
 - 类型注解：所有公开方法加参数和返回值类型
 - 链式调用：Widget 交互方法返回 `self`
-- 异常：服务端错误抛 `CommandError`，用户判断用 `WidgetNotFoundError` / `ValueError`
+- 异常层次：`MatoryError` → `CommandError`（服务端错误）/ `WidgetNotFoundError`（定位失败）
 - Widget 定位优先用 `id`（O(1)），`name` 次之，`path` 仅调试用
 - Page Object 命名不要以 `Test` 开头（避免 pytest 误采集）
+- Widget 所有通信通过 `session._send_cmd()`，不在 Widget 内重复实现
 
 ## 测试
 
@@ -50,10 +51,10 @@ pytest autotests/ --matory-host=127.0.0.1 --matory-port=2666 -v
 
 ## 关键依赖关系
 
-- Widget → Session（通过 `_session._conn` 通信）
+- Widget → Session._send_cmd()（所有通信统一走 Session）
 - Session → Connection（TCP 生命周期）
 - Page → WidgetDescriptor（描述符延迟绑定 Widget）
-- Recorder → Widget._send_cmd（monkey-patch 拦截操作）
+- Recorder → Session._send_cmd()（实例级拦截，非类级 monkey-patch）
 - pytest_plugin → Session（fixture 注入）
 
 ## 常用操作

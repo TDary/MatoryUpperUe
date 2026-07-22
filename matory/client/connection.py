@@ -14,7 +14,7 @@ class Connection:
     """
 
     def __init__(self, host: str = "127.0.0.1", port: int = 2666, timeout: float = 5.0) -> None:
-        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock: socket.socket | None = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self._sock.settimeout(timeout)
         self._sock.connect((host, port))
         self._recv_buf = b""
@@ -27,6 +27,8 @@ class Connection:
 
     def send(self, data: bytes) -> None:
         """Send raw bytes over the socket."""
+        if self._sock is None:
+            raise ConnectionError("连接已关闭")
         self._sock.sendall(data)
 
     def recv_line(self) -> str:
@@ -36,6 +38,8 @@ class Connection:
         Raises ``ConnectionError`` if the socket is closed before a
         complete line arrives.
         """
+        if self._sock is None:
+            raise ConnectionError("连接已关闭")
         while b"\n" not in self._recv_buf:
             chunk = self._sock.recv(4096)
             if not chunk:
@@ -48,5 +52,7 @@ class Connection:
         return line.decode("utf-8")
 
     def close(self) -> None:
-        """Close the underlying socket."""
-        self._sock.close()
+        """Close the underlying socket. Safe to call multiple times."""
+        if self._sock is not None:
+            self._sock.close()
+            self._sock = None

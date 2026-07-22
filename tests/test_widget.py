@@ -102,9 +102,9 @@ def test_click_raises_command_error(mock_conn):
         assert e.code == 1
 
 
-def test_id_property(mock_conn):
+def test_locator_value_property(mock_conn):
     w = _make_widget(mock_conn, "id", "42")
-    assert w.id == "42"
+    assert w.locator_value == "42"
 
 
 def test_name_property_via_detail(mock_conn):
