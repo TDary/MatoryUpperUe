@@ -47,3 +47,10 @@ class ConnectionKeyError(MatoryError):
         super().__init__(
             f"ConnectionKeyError(key={key!r}, available={available!r})"
         )
+
+
+class ConnectionError(MatoryError):
+    """TCP connection to the UE SDK server failed or was lost."""
+
+    def __init__(self, message: str = "Connection error") -> None:
+        super().__init__(message)

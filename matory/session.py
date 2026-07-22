@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any
+import logging
+from typing import Any, Callable
 
 from matory.client.connection import Connection
 from matory.client.protocol import Cmd, Key, Method, encode_request, decode_response
@@ -10,6 +11,8 @@ from matory.elements.button import ButtonWidget
 from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
 from matory.errors import CommandError, ConnectionKeyError
+
+logger = logging.getLogger("matory.session")
 
 
 class Session:
@@ -125,12 +128,16 @@ class Session:
         if args is None:
             args = {}
         conn = self.get_connection(connection)
+        conn_key = connection or self._default_key
+        logger.debug("[%s] >> cmd=%s args=%s", conn_key, cmd, args)
         data = encode_request(self._next_req_id(), cmd, args)
         conn.send(data)
         line = conn.recv_line()
         resp = decode_response(line)
         if resp.get("code", 0) != 0:
+            logger.warning("[%s] << cmd=%s error: code=%s msg=%s", conn_key, cmd, resp.get("code"), resp.get("msg"))
             raise CommandError(resp.get("code", -1), resp.get("msg", "unknown error"))
+        logger.debug("[%s] << cmd=%s data=%s", conn_key, cmd, resp.get("data"))
         return resp
 
     def _resolve_method_value(self, id: str | None, name: str | None, path: str | None) -> tuple[str, str]:
@@ -229,6 +236,39 @@ class Session:
         """Stop UI recording and return the result."""
         resp = self._send_cmd(Cmd.STOP_RECORD, {})
         return resp.get("data", {})
+
+    # ── Wait / Retry ──
+
+    def wait_until(
+        self,
+        predicate: Callable[..., bool],
+        *,
+        timeout: float = 10.0,
+        interval: float = 0.5,
+    ) -> None:
+        """Poll until *predicate()* returns True.
+
+        Args:
+            predicate: A callable with no required args that returns bool.
+            timeout: Maximum seconds to wait (default 10.0).
+            interval: Seconds between polls (default 0.5).
+
+        Raises:
+            TimeoutError: If the predicate is not satisfied within *timeout*.
+        """
+        import time
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if predicate():
+                    return
+            except Exception:
+                pass
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"Session.wait_until timed out after {timeout}s"
+                )
+            time.sleep(interval)
 
     # ── Lifecycle ──
 

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+import time
+from typing import TYPE_CHECKING, Any, Callable
 
 from matory.client.protocol import Cmd, Key
 
@@ -23,6 +24,10 @@ class Widget:
         self._method = method
         self._value = value
         self._connection_key = connection_key
+
+    def __repr__(self) -> str:
+        conn = f", connection={self._connection_key!r}" if self._connection_key else ""
+        return f"{self.__class__.__name__}({self._method}={self._value!r}{conn})"
 
     def _send(self, cmd: str, args: dict[str, Any]) -> dict:
         """Send a command through the bound connection."""
@@ -99,3 +104,56 @@ class Widget:
         """Widget name from detail (performs a network call)."""
         detail = self.get_detail()
         return detail.get("name", "")
+
+    # ── Wait / Retry ──
+
+    def wait_until(
+        self,
+        predicate: Callable[[Widget], bool],
+        *,
+        timeout: float = 10.0,
+        interval: float = 0.5,
+    ) -> Widget:
+        """Poll until *predicate(widget)* returns True.
+
+        Args:
+            predicate: A callable that takes this widget and returns bool.
+            timeout: Maximum seconds to wait (default 10.0).
+            interval: Seconds between polls (default 0.5).
+
+        Returns:
+            self, for chaining.
+
+        Raises:
+            TimeoutError: If the predicate is not satisfied within *timeout*.
+        """
+        deadline = time.monotonic() + timeout
+        while True:
+            try:
+                if predicate(self):
+                    return self
+            except Exception:
+                pass  # transient errors (e.g. widget not ready) are retried
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"wait_until timed out after {timeout}s "
+                    f"for {self!r}"
+                )
+            time.sleep(interval)
+
+    def wait_exists(self, *, timeout: float = 10.0, interval: float = 0.5) -> Widget:
+        """Wait until this widget exists in the UI tree.
+
+        Returns self for chaining.
+        """
+        return self.wait_until(lambda w: w.exists(), timeout=timeout, interval=interval)
+
+    def wait_enabled(self, *, timeout: float = 10.0, interval: float = 0.5) -> Widget:
+        """Wait until this widget is enabled.
+
+        Returns self for chaining.
+        """
+        def _is_enabled(w: Widget) -> bool:
+            detail = w.get_detail()
+            return detail.get("enabled", False) is True
+        return self.wait_until(_is_enabled, timeout=timeout, interval=interval)

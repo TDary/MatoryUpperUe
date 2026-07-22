@@ -7,6 +7,7 @@ import pytest
 
 from matory.client.connection import Connection
 from matory.client.protocol import encode_request
+from matory.errors import ConnectionError as MatoryConnectionError
 
 
 class FakeSocket:
@@ -115,6 +116,6 @@ def test_connection_recv_line_connection_error(mock_socket_cls):
     mock_socket_cls.return_value = fake
 
     conn = Connection("127.0.0.1", 2666, 5.0)
-    with pytest.raises(ConnectionError, match="连接已断开"):
+    with pytest.raises(MatoryConnectionError, match="Connection lost"):
         conn.recv_line()
     conn.close()

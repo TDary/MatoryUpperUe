@@ -1,6 +1,9 @@
 """Tests for error hierarchy."""
 
-from matory.errors import MatoryError, CommandError, WidgetNotFoundError, ConnectionKeyError
+from matory.errors import (
+    MatoryError, CommandError, WidgetNotFoundError,
+    ConnectionKeyError, ConnectionError,
+)
 
 
 def test_matory_error_is_exception():
@@ -38,3 +41,12 @@ def test_connection_key_error_carries_key_and_available():
     assert err.key == "ue2"
     assert err.available == ["default", "ue1"]
     assert "ue2" in str(err)
+
+
+def test_connection_error_is_matory_error():
+    assert issubclass(ConnectionError, MatoryError)
+
+
+def test_connection_error_message():
+    err = ConnectionError("Connection lost")
+    assert "Connection lost" in str(err)
