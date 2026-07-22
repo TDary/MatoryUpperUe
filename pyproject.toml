@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "matory"
+version = "0.1.0"
+description = "UE UI automation framework with pytest integration"
+requires-python = ">=3.10"
+dependencies = []
+optional-dependencies.test = ["pytest>=7.0"]
+
+[project.entry-points.pytest11]
+matory = "matory.pytest_plugin"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "ui: marks tests as UE UI tests",
+]
