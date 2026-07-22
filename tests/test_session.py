@@ -1,6 +1,7 @@
 """Tests for Session."""
 
 import json
+import threading
 
 import pytest
 
@@ -131,6 +132,7 @@ def test_session_context_manager(mock_conn):
 def test_next_req_id_increments():
     session = Session.__new__(Session)
     session._req_id = 0
+    session._lock = threading.Lock()
     assert session._next_req_id() == 1
     assert session._next_req_id() == 2
 

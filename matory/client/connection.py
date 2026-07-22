@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import socket
+import threading
 from typing import Any
 
 from matory.errors import ConnectionError
@@ -16,7 +17,10 @@ class Connection:
 
     Handles the newline-delimited JSON protocol with internal stream
     buffering to handle TCP packet fragmentation. Supports automatic
-    reconnection and heartbeat health checks.
+    reconnection and is thread-safe.
+
+    Thread safety: all send/recv operations are protected by an internal
+    lock so that multiple threads can share a Connection safely.
     """
 
     def __init__(
@@ -37,6 +41,7 @@ class Connection:
         self._retry_delay = retry_delay
         self._sock: socket.socket | None = None
         self._recv_buf = b""
+        self._lock = threading.Lock()
         self._connect()
 
     def _connect(self) -> None:
@@ -59,7 +64,10 @@ class Connection:
             raise ConnectionError("Connection lost and auto_reconnect is disabled")
         for attempt in range(1, self._max_retries + 1):
             try:
-                logger.info("Reconnect attempt %d/%d to %s:%d", attempt, self._max_retries, self._host, self._port)
+                logger.info(
+                    "Reconnect attempt %d/%d to %s:%d",
+                    attempt, self._max_retries, self._host, self._port,
+                )
                 self._connect()
                 return
             except OSError as e:
@@ -73,33 +81,49 @@ class Connection:
         )
 
     def send(self, data: bytes) -> None:
-        """Send raw bytes over the socket."""
+        """Send raw bytes over the socket. Thread-safe."""
+        with self._lock:
+            self._send_unlocked(data)
+
+    def _send_unlocked(self, data: bytes) -> None:
+        """Send raw bytes (caller must hold _lock)."""
         if self._sock is None:
             raise ConnectionError("Connection closed")
         try:
             logger.debug("Send: %s", data.decode("utf-8", errors="replace").strip())
             self._sock.sendall(data)
         except OSError:
-            # Socket broken — try reconnect
             self._try_reconnect()
             self._sock.sendall(data)
 
     def recv_line(self) -> str:
-        """Read one complete newline-terminated line from the TCP stream.
+        """Read one newline-terminated line from the TCP stream. Thread-safe.
 
-        Blocks until a full line (ending with ``\\n``) is available.
-        Raises ``ConnectionError`` if the socket is closed before a
-        complete line arrives and reconnection also fails.
+        Blocks until a full line (ending with ``\\n``) is available or
+        the socket timeout expires.
+
+        Raises:
+            ConnectionError: If the connection is lost and reconnection fails.
+            TimeoutError: If no complete line arrives within the socket timeout.
         """
+        with self._lock:
+            return self._recv_line_unlocked()
+
+    def _recv_line_unlocked(self) -> str:
+        """Read one line (caller must hold _lock)."""
         if self._sock is None:
             raise ConnectionError("Connection closed")
         while b"\n" not in self._recv_buf:
             try:
                 chunk = self._sock.recv(4096)
+            except socket.timeout:
+                raise TimeoutError(
+                    f"recv_line timed out after {self._timeout}s "
+                    f"waiting for response from {self._host}:{self._port}"
+                )
             except OSError:
                 chunk = b""
             if not chunk:
-                # Connection lost — try reconnect
                 self._try_reconnect()
                 continue
             self._recv_buf += chunk
@@ -111,9 +135,21 @@ class Connection:
         logger.debug("Recv: %s", decoded)
         return decoded
 
+    def send_and_recv(self, data: bytes) -> str:
+        """Send data and receive one response line atomically. Thread-safe.
+
+        This is the preferred method for request-response communication
+        as it holds the lock across both send and recv, preventing other
+        threads from interleaving their requests.
+        """
+        with self._lock:
+            self._send_unlocked(data)
+            return self._recv_line_unlocked()
+
     def close(self) -> None:
         """Close the underlying socket. Safe to call multiple times."""
-        if self._sock is not None:
-            logger.info("Closing connection to %s:%d", self._host, self._port)
-            self._sock.close()
-            self._sock = None
+        with self._lock:
+            if self._sock is not None:
+                logger.info("Closing connection to %s:%d", self._host, self._port)
+                self._sock.close()
+                self._sock = None

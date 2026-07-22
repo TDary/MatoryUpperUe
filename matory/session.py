@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Callable
 
 from matory.client.connection import Connection
@@ -33,6 +34,7 @@ class Session:
         self._connections: dict[str, Connection] = {}
         self._default_key: str = "default"
         self._req_id = 0
+        self._lock = threading.Lock()
         self.add_connection("default", host, port, timeout, set_default=True)
 
     def __enter__(self) -> Session:
@@ -106,33 +108,40 @@ class Session:
         """Set the default connection (backward-compatible mutator).
 
         Handles the case where ``Session.__new__`` was used (skipping
-        ``__init__``) so that ``_connections`` / ``_default_key`` may
-        not exist yet.
+        ``__init__``) so that ``_connections`` / ``_default_key`` / ``_lock``
+        may not exist yet.
         """
         if not hasattr(self, "_connections") or self._connections is None:
             self._connections = {}
         if not hasattr(self, "_default_key") or self._default_key is None:
             self._default_key = "default"
+        if not hasattr(self, "_lock") or self._lock is None:
+            self._lock = threading.Lock()
         self._connections[self._default_key] = value
 
     # ── Internal helpers ──
 
     def _next_req_id(self) -> int:
-        """Return the next incrementing request ID."""
-        self._req_id += 1
-        return self._req_id
+        """Return the next incrementing request ID. Thread-safe."""
+        with self._lock:
+            self._req_id += 1
+            return self._req_id
 
     def _send_cmd(self, cmd: str, args: dict[str, Any] | None = None, *,
                   connection: str | None = None) -> dict:
-        """Send a raw command and return the parsed response."""
+        """Send a raw command and return the parsed response.
+
+        Uses Connection.send_and_recv() to atomically send and receive,
+        preventing interleaved requests from other threads.
+        """
         if args is None:
             args = {}
         conn = self.get_connection(connection)
         conn_key = connection or self._default_key
+        req_id = self._next_req_id()
         logger.debug("[%s] >> cmd=%s args=%s", conn_key, cmd, args)
-        data = encode_request(self._next_req_id(), cmd, args)
-        conn.send(data)
-        line = conn.recv_line()
+        data = encode_request(req_id, cmd, args)
+        line = conn.send_and_recv(data)
         resp = decode_response(line)
         if resp.get("code", 0) != 0:
             logger.warning("[%s] << cmd=%s error: code=%s msg=%s", conn_key, cmd, resp.get("code"), resp.get("msg"))

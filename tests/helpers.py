@@ -32,6 +32,11 @@ class MockConnection:
             raise RuntimeError("No more mock responses")
         return self._responses.pop(0)
 
+    def send_and_recv(self, data: bytes) -> str:
+        """Atomically send and receive (matches Connection.send_and_recv)."""
+        self._sent.append(data)
+        return self.recv_line()
+
     def close(self) -> None:
         pass
 
