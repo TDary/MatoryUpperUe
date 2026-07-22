@@ -8,11 +8,16 @@ UE UI 自动化测试框架，基于 Matory SDK TCP 协议。
 - **Page Object 模式**：WidgetDescriptor 描述符延迟绑定，提高复用性
 - **录制回放**：录制操作自动生成 pytest 测试代码
 - **链式调用**：`widget.click().set_enabled(False)` 流畅 API
+- **异常分层**：`WidgetNotFoundError`（定位失败）/ `CommandError`（服务端错误）
 
 ## 安装
 
 ```bash
+# 开发模式
 pip install -e ".[test]"
+
+# 或安装构建产物
+pip install matory-0.1.0-py3-none-any.whl
 ```
 
 ## 快速开始
@@ -89,8 +94,8 @@ with Session(host="127.0.0.1", port=2666, timeout=5.0) as s:
     s.get_sdk_version()          # → "1.0.0"
     s.get_engine_version()       # → "5.6.1"
     s.get_widget_tree()          # → dict
-    s.find_button(id="3")        # → ButtonWidget
-    s.find_text(keyword="标题")   # → TextWidget
+    s.find_button(id="3")        # → ButtonWidget (找不到抛 WidgetNotFoundError)
+    s.find_text(keyword="标题")   # → TextWidget (找不到抛 WidgetNotFoundError)
     s.find_widget(id="99")       # → Widget
     s.page(MainPage)             # → MainPage 实例
     s.start_record()             # 开始录制
@@ -101,13 +106,26 @@ with Session(host="127.0.0.1", port=2666, timeout=5.0) as s:
 
 ```python
 widget.exists()                        # → bool
-widget.get_detail()                    # → dict
+widget.get_detail()                    # → dict (要求 id 定位)
 widget.click(simulate=False, button="left")  # → self (链式)
 widget.press("left")                   # → self
 widget.release("left")                 # → self
 widget.set_enabled(True)               # → self
-widget.id                              # → str
-widget.name                            # → str
+widget.locator_value                   # → str (定位值)
+widget.name                            # → str (⚠️ 会发网络请求)
+```
+
+### 异常
+
+```python
+from matory.errors import MatoryError, CommandError, WidgetNotFoundError
+
+try:
+    btn = session.find_button(id="999")
+except WidgetNotFoundError as e:
+    print(f"找不到: method={e.method}, value={e.value}")
+except CommandError as e:
+    print(f"服务端错误: code={e.code}, msg={e.msg}")
 ```
 
 ### WidgetDescriptor
@@ -215,9 +233,7 @@ MatoryUpperUe/
 ├── autotests/                  # 自动化用例目录
 │   ├── pages/                  #   Page Object 定义
 │   │   └── main_page.py        #   示例页面
-│   ├── test_main.py            #   示例用例
-│   └── conftest.py             #   注册 pytest 插件
+│   └── test_main.py            #   示例用例
 ├── tests/                      # 框架单元测试
-├── test_matory.py              # SDK 集成测试脚本
 └── pyproject.toml
 ```
