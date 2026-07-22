@@ -35,3 +35,20 @@ def test_session_fixture_exists(pytester):
     # Use *Connection*Error* to match both ConnectionError (Linux/macOS)
     # and ConnectionRefusedError (Windows)
     result.stdout.fnmatch_lines(["*Connection*Error*"])
+
+
+def test_plugin_registers_endpoints_option(pytester):
+    """Plugin should add --matory-endpoints."""
+    result = pytester.runpytest("--help")
+    result.stdout.fnmatch_lines(["*--matory-endpoints*"])
+
+
+def test_sessions_fixture_exists(pytester):
+    """The 'sessions' fixture should be available."""
+    pytester.makepyfile("""
+        def test_sessions_fixture_name(sessions):
+            assert "default" in sessions
+    """)
+    result = pytester.runpytest("--matory-host=127.0.0.1", "--matory-port=9999", "-v")
+    # Will fail to connect, but fixture should be found
+    result.stdout.fnmatch_lines(["*Connection*Error*"])

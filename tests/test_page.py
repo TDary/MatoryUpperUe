@@ -1,5 +1,6 @@
 """Tests for Page and WidgetDescriptor."""
 
+from tests.helpers import MockConnection
 from matory.elements.button import ButtonWidget
 from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
@@ -99,3 +100,46 @@ def test_page_custom_method(mock_conn):
     p = MainMenu(session)
     result = p.click_login()
     assert result is p
+
+
+def test_descriptor_connection_forwarded(mock_conn):
+    """WidgetDescriptor(connection=) is forwarded to Widget."""
+    class MyPage(Page):
+        btn = WidgetDescriptor(id="3", connection="ue2")
+    session = _make_session(mock_conn)
+    session._connections["ue2"] = MockConnection()
+    p = MyPage(session)
+    assert p.btn._connection_key == "ue2"
+
+
+def test_page_connection_forwarded(mock_conn):
+    """Page(session, connection=) is forwarded to descriptors without explicit connection."""
+    class MyPage(Page):
+        btn = WidgetDescriptor(id="3")
+    session = _make_session(mock_conn)
+    session._connections["ue2"] = MockConnection()
+    p = MyPage(session, connection="ue2")
+    assert p.btn._connection_key == "ue2"
+
+
+def test_descriptor_overrides_page(mock_conn):
+    """Descriptor connection= overrides Page connection."""
+    class MyPage(Page):
+        btn1 = WidgetDescriptor(id="3", connection="client")
+        btn2 = WidgetDescriptor(id="4")
+    session = _make_session(mock_conn)
+    session._connections["client"] = MockConnection()
+    session._connections["host"] = MockConnection()
+    p = MyPage(session, connection="host")
+    assert p.btn1._connection_key == "client"  # descriptor overrides
+    assert p.btn2._connection_key == "host"    # page default
+
+
+def test_page_backward_compat_no_connection(mock_conn):
+    """Page(session) still works without connection."""
+    class MyPage(Page):
+        btn = WidgetDescriptor(id="3")
+    session = _make_session(mock_conn)
+    p = MyPage(session)
+    assert p._connection_key is None
+    assert p.btn._connection_key is None

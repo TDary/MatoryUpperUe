@@ -31,3 +31,19 @@ class WidgetNotFoundError(MatoryError):
         self.method = method
         self.value = value
         super().__init__(f"WidgetNotFoundError(method={method!r}, value={value!r})")
+
+
+class ConnectionKeyError(MatoryError):
+    """No connection found with the given key.
+
+    Attributes:
+        key: The connection key that was not found.
+        available: List of existing connection keys.
+    """
+
+    def __init__(self, key: str, available: list[str]) -> None:
+        self.key = key
+        self.available = available
+        super().__init__(
+            f"ConnectionKeyError(key={key!r}, available={available!r})"
+        )

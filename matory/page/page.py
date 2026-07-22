@@ -23,7 +23,8 @@ class WidgetDescriptor:
 
     def __new__(cls, id: str | None = None, name: str | None = None, path: str | None = None,
                 method: str | None = None, value: str | None = None,
-                widget_class: type | None = None, **kwargs: Any) -> WidgetDescriptor:
+                widget_class: type | None = None, *, connection: str | None = None,
+                **kwargs: Any) -> WidgetDescriptor:
         instance = super().__new__(cls)
         # Determine method/value from keyword sugar
         if method is not None and value is not None:
@@ -41,6 +42,7 @@ class WidgetDescriptor:
         else:
             raise ValueError("WidgetDescriptor requires one of: id, name, path, or method+value")
         instance._widget_class = widget_class
+        instance._connection = connection
         instance._attr_name: str | None = None
         return instance
 
@@ -58,8 +60,9 @@ class WidgetDescriptor:
         if self._attr_name not in obj.__dict__:
             from matory.elements.widget import Widget
             widget_class = self._widget_class or Widget
+            conn_key = self._connection or obj._connection_key
             obj.__dict__[self._attr_name] = widget_class(
-                obj.session, self._method, self._value
+                obj.session, self._method, self._value, connection_key=conn_key
             )
         return obj.__dict__[self._attr_name]
 
@@ -71,8 +74,9 @@ class Page:
     the UI elements on a page.
     """
 
-    def __init__(self, session: Session) -> None:
+    def __init__(self, session: Session, *, connection: str | None = None) -> None:
         self._session = session
+        self._connection_key = connection
 
     @property
     def session(self) -> Session:

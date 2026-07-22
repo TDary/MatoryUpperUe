@@ -16,6 +16,7 @@ class Step:
     method: str
     value: str
     args: dict[str, Any] = field(default_factory=dict)
+    connection: str | None = None
 
 
 # Maps server command names to human-friendly action names
@@ -63,7 +64,8 @@ class Recorder:
         original = self._original_send_cmd
         recorder_self = self
 
-        def patched_send_cmd(cmd: str, args: dict[str, Any] | None = None) -> dict:
+        def patched_send_cmd(cmd: str, args: dict[str, Any] | None = None,
+                             *, connection: str | None = None) -> dict:
             if cmd in _INTERACTION_CMPS and recorder_self._recording:
                 action = _INTERACTION_CMPS[cmd]
                 # Extract method/value from args (all interaction commands include them)
@@ -74,9 +76,10 @@ class Recorder:
                     method=method,
                     value=value,
                     args=args or {},
+                    connection=connection,
                 )
                 recorder_self._steps.append(step)
-            return original(cmd, args)
+            return original(cmd, args, connection=connection)
 
         self._session._send_cmd = patched_send_cmd  # type: ignore[assignment]
 
@@ -93,8 +96,9 @@ class Recorder:
         Widgets with the same (method, value) are deduplicated into a single
         Page Object descriptor.
         """
-        # Deduplicate widgets
+        # Deduplicate widgets, also track per-widget connection
         seen_widgets: dict[tuple[str, str], str] = {}  # (method, value) -> attr_name
+        widget_connections: dict[tuple[str, str], str | None] = {}  # (method, value) -> connection
         attr_counter: dict[str, int] = {}
 
         for step in self._steps:
@@ -110,13 +114,20 @@ class Recorder:
                 else:
                     attr_counter[safe_name] = 0
                 seen_widgets[key] = safe_name
+                widget_connections[key] = step.connection
 
         # Build Page class
         descriptor_lines = []
         for (method, value), attr_name in seen_widgets.items():
-            descriptor_lines.append(
-                f'    {attr_name} = WidgetDescriptor({method}="{value}")'
-            )
+            conn = widget_connections[(method, value)]
+            if conn is not None:
+                descriptor_lines.append(
+                    f'    {attr_name} = WidgetDescriptor({method}="{value}", connection="{conn}")'
+                )
+            else:
+                descriptor_lines.append(
+                    f'    {attr_name} = WidgetDescriptor({method}="{value}")'
+                )
 
         # Build test body
         action_lines = []

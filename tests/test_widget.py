@@ -2,6 +2,7 @@
 
 import json
 
+from tests.helpers import MockConnection
 from matory.client.protocol import Cmd, Method, Key, Button
 from matory.elements.widget import Widget
 from matory.session import Session
@@ -111,3 +112,32 @@ def test_name_property_via_detail(mock_conn):
     mock_conn.add_response(data={"type": "Button", "name": "LoginBtn", "id": 42})
     w = _make_widget(mock_conn, "id", "42")
     assert w.name == "LoginBtn"
+
+
+def test_widget_connection_key_default_none(mock_conn):
+    """Widget without connection_key uses session default."""
+    w = _make_widget(mock_conn)
+    assert w._connection_key is None
+
+
+def test_widget_with_connection_key(mock_conn):
+    """Widget with connection_key stores it and routes through named connection."""
+    mock_conn2 = MockConnection()
+    mock_conn2.add_response(data=None)
+    session = Session.__new__(Session)
+    session._conn = mock_conn
+    session._connections = {"default": mock_conn, "ue2": mock_conn2}
+    session._default_key = "default"
+    session._req_id = 0
+    w = Widget(session, "id", "50", connection_key="ue2")
+    assert w._connection_key == "ue2"
+    w.click()
+    # Command should have been sent through ue2 connection
+    assert len(mock_conn2._sent) == 1
+    assert len(mock_conn._sent) == 0
+
+
+def test_widget_backward_compat_no_connection_key(mock_conn):
+    """Old-style Widget(session, method, value) still works."""
+    w = _make_widget(mock_conn)
+    assert w._connection_key is None

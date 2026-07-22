@@ -17,16 +17,22 @@ class Widget:
     All interaction methods return ``self`` for chaining.
     """
 
-    def __init__(self, session: Session, method: str, value: str) -> None:
+    def __init__(self, session: Session, method: str, value: str,
+                 *, connection_key: str | None = None) -> None:
         self._session = session
         self._method = method
         self._value = value
+        self._connection_key = connection_key
+
+    def _send(self, cmd: str, args: dict[str, Any]) -> dict:
+        """Send a command through the bound connection."""
+        return self._session._send_cmd(cmd, args, connection=self._connection_key)
 
     # ── Query ──
 
     def exists(self) -> bool:
         """Check whether this widget exists in the UI tree."""
-        resp = self._session._send_cmd(Cmd.WIDGET_EXISTS, {
+        resp = self._send(Cmd.WIDGET_EXISTS, {
             Key.METHOD: self._method,
             Key.VALUE: self._value,
         })
@@ -39,14 +45,14 @@ class Widget:
         Widgets returned by ``find_button`` and ``find_text`` are
         automatically converted to ID-based locators.
         """
-        resp = self._session._send_cmd(Cmd.GET_WIDGET_DETAIL, {Key.ID: self._value})
+        resp = self._send(Cmd.GET_WIDGET_DETAIL, {Key.ID: self._value})
         return resp.get("data", {})
 
     # ── Interaction ──
 
     def click(self, *, simulate: bool = False, button: str = "left") -> Widget:
         """Click this widget. Returns self for chaining."""
-        self._session._send_cmd(Cmd.CLICK_WIDGET, {
+        self._send(Cmd.CLICK_WIDGET, {
             Key.METHOD: self._method,
             Key.VALUE: self._value,
             Key.SIMULATE: simulate,
@@ -56,7 +62,7 @@ class Widget:
 
     def press(self, button: str = "left") -> Widget:
         """Press (mouse-down) this widget. Returns self for chaining."""
-        self._session._send_cmd(Cmd.PRESS_WIDGET, {
+        self._send(Cmd.PRESS_WIDGET, {
             Key.METHOD: self._method,
             Key.VALUE: self._value,
             Key.BUTTON: button,
@@ -65,7 +71,7 @@ class Widget:
 
     def release(self, button: str = "left") -> Widget:
         """Release (mouse-up) this widget. Returns self for chaining."""
-        self._session._send_cmd(Cmd.RELEASE_WIDGET, {
+        self._send(Cmd.RELEASE_WIDGET, {
             Key.METHOD: self._method,
             Key.VALUE: self._value,
             Key.BUTTON: button,
@@ -74,7 +80,7 @@ class Widget:
 
     def set_enabled(self, enabled: bool = True) -> Widget:
         """Enable or disable this widget. Returns self for chaining."""
-        self._session._send_cmd(Cmd.SET_WIDGET_ENABLED, {
+        self._send(Cmd.SET_WIDGET_ENABLED, {
             Key.METHOD: self._method,
             Key.VALUE: self._value,
             Key.ENABLED: enabled,

@@ -1,5 +1,6 @@
 """Tests for Recorder."""
 
+from tests.helpers import MockConnection
 from matory.elements.button import ButtonWidget
 from matory.elements.widget import Widget
 from matory.recorder import Recorder, Step
@@ -155,3 +156,43 @@ def test_recorder_stop_restores_send_cmd(mock_conn):
     mock_conn.add_response(data="1.0.0")
     resp = session.get_sdk_version()
     assert resp == "1.0.0"
+
+
+def test_step_has_connection_field():
+    step = Step(action="click", method="id", value="42", connection="ue2")
+    assert step.connection == "ue2"
+
+
+def test_step_connection_defaults_none():
+    step = Step(action="click", method="id", value="42")
+    assert step.connection is None
+
+
+def test_recorder_records_connection(mock_conn):
+    """Recording a widget with connection_key records it in Step."""
+    mock_conn2 = MockConnection()
+    mock_conn2.add_response(data=None)
+    session = _make_session(mock_conn)
+    session._connections["ue2"] = mock_conn2
+    rec = Recorder(session)
+    rec.start()
+    btn = ButtonWidget(session, "id", "42", connection_key="ue2")
+    btn.click()
+    rec.stop()
+    assert len(rec.steps) == 1
+    assert rec.steps[0].connection == "ue2"
+
+
+def test_recorder_generate_code_with_connection(tmp_path):
+    """Generated code includes connection= on descriptors."""
+    steps = [
+        Step(action="click", method="id", value="LoginBtn", connection="ue2",
+             args={"simulate": False, "button": "left"}),
+    ]
+    rec = Recorder.__new__(Recorder)
+    rec._steps = steps
+    rec._recording = False
+    output = tmp_path / "test_recorded.py"
+    rec.generate_code("RecordedPage", str(output))
+    code = output.read_text(encoding="utf-8")
+    assert 'connection="ue2"' in code
