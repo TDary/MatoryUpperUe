@@ -273,13 +273,21 @@ class Session:
     # ── Health Check ──
 
     def is_alive(self, *, connection: str | None = None) -> bool:
-        """Check if a connection is alive by sending a lightweight command.
+        """Check if a connection is alive by sending a Ping command.
 
-        Returns True if the server responds, False if the connection is dead.
+        Returns True if the server responds with pong, False if dead.
         """
         try:
-            self._send_cmd(Cmd.GET_SDK_VERSION, {}, connection=connection)
+            self._send_cmd(Cmd.PING, {}, connection=connection)
             return True
+        except Exception:
+            return False
+
+    def ping(self, *, connection: str | None = None) -> bool:
+        """Send a Ping command. Returns True if server responds with pong."""
+        try:
+            resp = self._send_cmd(Cmd.PING, {}, connection=connection)
+            return resp.get("msg") == "pong"
         except Exception:
             return False
 

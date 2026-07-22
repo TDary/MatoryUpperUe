@@ -10,6 +10,7 @@ class Cmd:
     """SDK command names — one-to-one with server MatoComponent::RegisterCommands."""
 
     # Basic
+    PING = "Ping"
     GET_SDK_VERSION = "GetSdkVersion"
     GET_ENGINE_VERSION = "GetEngineVersion"
     DISCONNECT = "Disconnect"
