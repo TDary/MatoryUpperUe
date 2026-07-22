@@ -10,9 +10,6 @@ import pytest
 
 from matory.client.connection import Connection
 
-# Register the matory pytest plugin so the 'session' fixture is available
-pytest_plugins = ["matory.pytest_plugin"]
-
 
 def _make_response(code: int = 0, msg: str = "ok", data=None) -> str:
     """Build a JSON response line as a string."""

@@ -1,11 +1,13 @@
-"""Tests for pytest plugin -- using pytester to verify fixture and CLI behavior."""
+"""Tests for pytest plugin — using pytester to verify fixture and CLI behavior."""
 
 import pytest
 
 
 def test_plugin_registers_cli_options(pytester):
-    """Plugin should add --matory-host, --matory-port, --matory-timeout."""
-    pytester.makeconftest("pytest_plugins = ['matory.pytest_plugin']")
+    """Plugin should add --matory-host, --matory-port, --matory-timeout.
+
+    The matory plugin auto-registers via the pytest11 entry point.
+    """
     result = pytester.runpytest("--help")
     result.stdout.fnmatch_lines(["*--matory-host*"])
     result.stdout.fnmatch_lines(["*--matory-port*"])
@@ -14,17 +16,15 @@ def test_plugin_registers_cli_options(pytester):
 
 def test_plugin_registers_ui_marker(pytester):
     """Plugin should register the 'ui' marker."""
-    pytester.makeconftest("pytest_plugins = ['matory.pytest_plugin']")
     result = pytester.runpytest("--markers")
     result.stdout.fnmatch_lines(["*ui*UE UI*"])
 
 
 def test_session_fixture_exists(pytester):
     """The 'session' fixture should be available (will fail to connect, but fixture must exist)."""
-    pytester.makeconftest("pytest_plugins = ['matory.pytest_plugin']")
     pytester.makepyfile("""
         def test_session_fixture_name(session):
-            # We just check the fixture is recognized -- connection will fail
+            # We just check the fixture is recognized — connection will fail
             # so we don't actually call anything on session
             assert session is not None
     """)

@@ -13,6 +13,9 @@ optional-dependencies.test = ["pytest>=7.0"]
 [project.entry-points.pytest11]
 matory = "matory.pytest_plugin"
 
+[tool.setuptools.packages.find]
+include = ["matory*"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [
