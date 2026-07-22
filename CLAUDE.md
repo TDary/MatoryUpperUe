@@ -35,6 +35,7 @@ L3 页面层 (page/)     →  Page Object 模式
 - Page Object 命名不要以 `Test` 开头（避免 pytest 误采集）
 - Widget 所有通信通过 `session._send_cmd()`，不在 Widget 内重复实现
 - 多连接：Widget 通过 `_connection_key` 路由到指定连接，默认走 Session 默认连接
+- 日志：框架使用 Python `logging`（logger `matory.session` / `matory.connection`），Session 支持可选 `log_file` 参数写文件
 
 ## 多连接设计
 
@@ -58,6 +59,9 @@ pytest autotests/test_multiplayer.py --matory-clients=4 --matory-client-base-por
 
 # pytest 多端点（通用方式）
 pytest autotests/ --matory-endpoints client=10.0.0.2:2666 -v
+
+# 带文件日志
+pytest autotests/ --matory-host=127.0.0.1 --matory-port=2666 --matory-log-file=matory.log -v
 ```
 
 ## 协议格式
