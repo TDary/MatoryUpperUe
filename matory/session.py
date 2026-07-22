@@ -11,7 +11,7 @@ from matory.client.protocol import Cmd, Key, Method, encode_request, decode_resp
 from matory.elements.button import ButtonWidget
 from matory.elements.text import TextWidget
 from matory.elements.widget import Widget
-from matory.errors import CommandError, ConnectionKeyError
+from matory.errors import CommandError, ConnectionKeyError, MatoryError
 
 logger = logging.getLogger("matory.session")
 
@@ -36,6 +36,7 @@ class Session:
         self._default_key: str = "default"
         self._req_id = 0
         self._lock = threading.Lock()
+        self._closed = False
         self._setup_file_logging(log_file, log_level)
         self.add_connection("default", host, port, timeout, set_default=True)
 
@@ -144,6 +145,8 @@ class Session:
             self._default_key = "default"
         if not hasattr(self, "_lock") or self._lock is None:
             self._lock = threading.Lock()
+        if not hasattr(self, "_closed") or self._closed is None:
+            self._closed = False
         self._connections[self._default_key] = value
 
     # ── Internal helpers ──
@@ -160,7 +163,12 @@ class Session:
 
         Uses Connection.send_and_recv() to atomically send and receive,
         preventing interleaved requests from other threads.
+
+        Raises:
+            MatoryError: If the session has been closed.
         """
+        if self._closed:
+            raise MatoryError("Session is closed")
         if args is None:
             args = {}
         conn = self.get_connection(connection)
@@ -316,7 +324,7 @@ class Session:
         try:
             self._send_cmd(Cmd.PING, {}, connection=connection)
             return True
-        except Exception:
+        except (MatoryError, OSError):
             return False
 
     def ping(self, *, connection: str | None = None) -> bool:
@@ -324,7 +332,7 @@ class Session:
         try:
             resp = self._send_cmd(Cmd.PING, {}, connection=connection)
             return resp.get("msg") == "pong"
-        except Exception:
+        except (MatoryError, OSError):
             return False
 
     # ── Lifecycle ──
@@ -342,7 +350,11 @@ class Session:
             raise exc
 
     def close(self) -> None:
-        """Close all connections without sending Disconnect."""
-        for conn in self._connections.values():
-            conn.close()
-        self._connections.clear()
+        """Close all connections without sending Disconnect. Thread-safe."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            for conn in self._connections.values():
+                conn.close()
+            self._connections.clear()

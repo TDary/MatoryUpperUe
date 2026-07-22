@@ -2,7 +2,7 @@
 
 from matory.errors import (
     MatoryError, CommandError, WidgetNotFoundError,
-    ConnectionKeyError, ConnectionError,
+    ConnectionKeyError, MatoryConnectionError,
 )
 from matory.session import Session
 from matory.elements.widget import Widget
@@ -16,7 +16,7 @@ __all__ = [
     "CommandError",
     "WidgetNotFoundError",
     "ConnectionKeyError",
-    "ConnectionError",
+    "MatoryConnectionError",
     "Session",
     "Widget",
     "ButtonWidget",

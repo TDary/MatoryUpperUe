@@ -143,3 +143,10 @@ def test_page_backward_compat_no_connection(mock_conn):
     p = MyPage(session)
     assert p._connection_key is None
     assert p.btn._connection_key is None
+
+
+def test_widget_descriptor_rejects_unknown_kwargs():
+    """WidgetDescriptor with a typo in kwargs should raise TypeError."""
+    import pytest
+    with pytest.raises(TypeError, match="unexpected keyword argument"):
+        WidgetDescriptor(id="3", widgt_class=ButtonWidget)

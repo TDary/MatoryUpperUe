@@ -22,6 +22,7 @@ def _make_session(mock_conn):
     session = Session.__new__(Session)
     session._conn = mock_conn
     session._req_id = 0
+    session._closed = False
     return session
 
 
@@ -347,3 +348,30 @@ def test_session_no_duplicate_file_handlers():
         for fh in file_handlers:
             parent_logger.removeHandler(fh)
             fh.close()
+
+
+# ── Thread safety and closed-state tests ──
+
+
+def test_close_sets_closed_flag(mock_conn):
+    """Session.close() should set _closed = True."""
+    session = _make_session(mock_conn)
+    assert session._closed is False
+    session.close()
+    assert session._closed is True
+
+
+def test_close_is_idempotent(mock_conn):
+    """Calling close() twice should not raise."""
+    session = _make_session(mock_conn)
+    session.close()
+    session.close()  # second call should be a no-op
+
+
+def test_send_cmd_after_close_raises(mock_conn):
+    """_send_cmd on a closed session should raise MatoryError."""
+    from matory.errors import MatoryError
+    session = _make_session(mock_conn)
+    session.close()
+    with pytest.raises(MatoryError, match="Session is closed"):
+        session._send_cmd("Ping", {})

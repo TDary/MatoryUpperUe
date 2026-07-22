@@ -2,7 +2,7 @@
 
 from matory.errors import (
     MatoryError, CommandError, WidgetNotFoundError,
-    ConnectionKeyError, ConnectionError,
+    ConnectionKeyError, MatoryConnectionError,
 )
 
 
@@ -44,9 +44,9 @@ def test_connection_key_error_carries_key_and_available():
 
 
 def test_connection_error_is_matory_error():
-    assert issubclass(ConnectionError, MatoryError)
+    assert issubclass(MatoryConnectionError, MatoryError)
 
 
 def test_connection_error_message():
-    err = ConnectionError("Connection lost")
+    err = MatoryConnectionError("Connection lost")
     assert "Connection lost" in str(err)

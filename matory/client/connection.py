@@ -7,7 +7,7 @@ import socket
 import threading
 from typing import Any
 
-from matory.errors import ConnectionError
+from matory.errors import MatoryConnectionError
 
 logger = logging.getLogger("matory.connection")
 
@@ -61,7 +61,7 @@ class Connection:
     def _try_reconnect(self) -> None:
         """Attempt to reconnect after a connection loss."""
         if not self._auto_reconnect:
-            raise ConnectionError("Connection lost and auto_reconnect is disabled")
+            raise MatoryConnectionError("Connection lost and auto_reconnect is disabled")
         for attempt in range(1, self._max_retries + 1):
             try:
                 logger.info(
@@ -75,7 +75,7 @@ class Connection:
                 if attempt < self._max_retries:
                     import time
                     time.sleep(self._retry_delay)
-        raise ConnectionError(
+        raise MatoryConnectionError(
             f"Failed to reconnect to {self._host}:{self._port} "
             f"after {self._max_retries} attempts"
         )
@@ -88,7 +88,7 @@ class Connection:
     def _send_unlocked(self, data: bytes) -> None:
         """Send raw bytes (caller must hold _lock)."""
         if self._sock is None:
-            raise ConnectionError("Connection closed")
+            raise MatoryConnectionError("Connection closed")
         try:
             logger.debug("Send: %s", data.decode("utf-8", errors="replace").strip())
             self._sock.sendall(data)
@@ -103,7 +103,7 @@ class Connection:
         the socket timeout expires.
 
         Raises:
-            ConnectionError: If the connection is lost and reconnection fails.
+            MatoryConnectionError: If the connection is lost and reconnection fails.
             TimeoutError: If no complete line arrives within the socket timeout.
         """
         with self._lock:
@@ -112,7 +112,7 @@ class Connection:
     def _recv_line_unlocked(self) -> str:
         """Read one line (caller must hold _lock)."""
         if self._sock is None:
-            raise ConnectionError("Connection closed")
+            raise MatoryConnectionError("Connection closed")
         while b"\n" not in self._recv_buf:
             try:
                 chunk = self._sock.recv(4096)

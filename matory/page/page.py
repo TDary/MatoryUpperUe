@@ -23,8 +23,7 @@ class WidgetDescriptor:
 
     def __new__(cls, id: str | None = None, name: str | None = None, path: str | None = None,
                 method: str | None = None, value: str | None = None,
-                widget_class: type | None = None, *, connection: str | None = None,
-                **kwargs: Any) -> WidgetDescriptor:
+                widget_class: type | None = None, *, connection: str | None = None) -> WidgetDescriptor:
         instance = super().__new__(cls)
         # Determine method/value from keyword sugar
         if method is not None and value is not None:
@@ -46,10 +45,14 @@ class WidgetDescriptor:
         instance._attr_name: str | None = None
         return instance
 
-    def __init__(self, **kwargs: Any) -> None:
-        # All initialization is done in __new__; this is a no-op
-        # but must exist so Python doesn't complain about unexpected kwargs.
-        pass
+    def __init__(self, id: str | None = None, name: str | None = None, path: str | None = None,
+                 method: str | None = None, value: str | None = None,
+                 widget_class: type | None = None, *, connection: str | None = None,
+                 **kwargs: Any) -> None:
+        # All initialization is done in __new__; this is a no-op.
+        # Reject unknown keyword arguments (e.g. typos like widgt_class).
+        if kwargs:
+            raise TypeError(f"WidgetDescriptor got unexpected keyword argument(s): {', '.join(kwargs)}")
 
     def __set_name__(self, owner: type, name: str) -> None:
         self._attr_name = name

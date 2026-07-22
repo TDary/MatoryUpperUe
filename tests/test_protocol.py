@@ -106,3 +106,11 @@ def test_decode_response_none_data():
     line = json.dumps({"id": 1, "code": 1, "msg": "error", "data": None})
     resp = decode_response(line)
     assert resp["data"] is None
+
+
+def test_decode_response_malformed_json_raises_matory_error():
+    """Malformed JSON from server should raise MatoryError, not json.JSONDecodeError."""
+    import pytest
+    from matory.errors import MatoryError
+    with pytest.raises(MatoryError, match="Malformed response"):
+        decode_response("not valid json{{{")

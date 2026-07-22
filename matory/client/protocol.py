@@ -5,6 +5,8 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from matory.errors import MatoryError
+
 
 class Cmd:
     """SDK command names — one-to-one with server MatoComponent::RegisterCommands."""
@@ -90,8 +92,14 @@ def decode_response(line: str) -> dict[str, Any]:
     """Decode a newline-delimited JSON response line.
 
     The ``data`` field is normalized via ``_parse_data_field``.
+
+    Raises:
+        MatoryError: If the response is not valid JSON.
     """
-    resp = json.loads(line)
+    try:
+        resp = json.loads(line)
+    except (json.JSONDecodeError, ValueError) as exc:
+        raise MatoryError(f"Malformed response from server: {exc}") from exc
     if "data" in resp:
         resp["data"] = _parse_data_field(resp["data"])
     return resp

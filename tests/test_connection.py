@@ -7,7 +7,7 @@ import pytest
 
 from matory.client.connection import Connection
 from matory.client.protocol import encode_request
-from matory.errors import ConnectionError as MatoryConnectionError
+from matory.errors import MatoryConnectionError
 
 
 class FakeSocket:
