@@ -375,3 +375,22 @@ def test_send_cmd_after_close_raises(mock_conn):
     session.close()
     with pytest.raises(MatoryError, match="Session is closed"):
         session._send_cmd("Ping", {})
+
+
+def test_find_text_no_args_raises(mock_conn):
+    """find_text with no args should raise ValueError."""
+    session = _make_session(mock_conn)
+    with pytest.raises(ValueError, match="at least one"):
+        session.find_text()
+
+
+def test_health_check_start_stop(mock_conn):
+    """start_health_check / stop_health_check should manage the thread."""
+    import time
+    session = _make_session(mock_conn)
+    assert session._health_thread is None
+    session.start_health_check(interval=1.0)
+    assert session._health_thread is not None
+    assert session._health_thread.is_alive()
+    session.stop_health_check()
+    assert session._health_thread is None

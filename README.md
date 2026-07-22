@@ -240,7 +240,7 @@ widget.press("left")                   # → self
 widget.release("left")                 # → self
 widget.set_enabled(True)               # → self
 widget.locator_value                   # → str (定位值)
-widget.name                            # → str (⚠️ 会发网络请求)
+widget.get_name()                     # → str (⚠️ 会发网络请求)
 ```
 
 ### 异常

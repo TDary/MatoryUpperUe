@@ -150,3 +150,17 @@ def test_widget_descriptor_rejects_unknown_kwargs():
     import pytest
     with pytest.raises(TypeError, match="unexpected keyword argument"):
         WidgetDescriptor(id="3", widgt_class=ButtonWidget)
+
+
+def test_page_invalidate_widgets(mock_conn):
+    """invalidate_widgets clears cached widgets so they are recreated on next access."""
+    class MyPage(Page):
+        btn = WidgetDescriptor(id="3")
+    session = _make_session(mock_conn)
+    p = MyPage(session)
+    w1 = p.btn
+    w2 = p.btn
+    assert w1 is w2  # cached
+    p.invalidate_widgets()
+    w3 = p.btn
+    assert w3 is not w1  # new instance after invalidation

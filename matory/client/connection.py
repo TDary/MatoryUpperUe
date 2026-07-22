@@ -110,9 +110,15 @@ class Connection:
             return self._recv_line_unlocked()
 
     def _recv_line_unlocked(self) -> str:
-        """Read one line (caller must hold _lock)."""
+        """Read one line (caller must hold _lock).
+
+        Limits reconnection attempts within a single recv_line call to
+        avoid infinite loops when the server keeps dropping connections.
+        """
         if self._sock is None:
             raise MatoryConnectionError("Connection closed")
+        reconnect_attempts = 0
+        max_recv_reconnects = self._max_retries
         while b"\n" not in self._recv_buf:
             try:
                 chunk = self._sock.recv(4096)
@@ -124,8 +130,15 @@ class Connection:
             except OSError:
                 chunk = b""
             if not chunk:
+                reconnect_attempts += 1
+                if reconnect_attempts > max_recv_reconnects:
+                    raise MatoryConnectionError(
+                        f"Connection to {self._host}:{self._port} lost "
+                        f"after {max_recv_reconnects} reconnection attempts"
+                    )
                 self._try_reconnect()
                 continue
+            reconnect_attempts = 0  # reset on successful recv
             self._recv_buf += chunk
 
         newline_pos = self._recv_buf.index(b"\n")

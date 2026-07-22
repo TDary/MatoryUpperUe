@@ -6,6 +6,7 @@ import time
 from typing import TYPE_CHECKING, Any, Callable
 
 from matory.client.protocol import Cmd, Key
+from matory.errors import MatoryError
 
 if TYPE_CHECKING:
     from matory.session import Session
@@ -46,9 +47,11 @@ class Widget:
     def get_detail(self) -> dict[str, Any]:
         """Retrieve full widget detail dict.
 
-        Note: This command requires the widget to be located by ID.
+        Note: This command uses the widget's locator value as an ID.
         Widgets returned by ``find_button`` and ``find_text`` are
-        automatically converted to ID-based locators.
+        automatically converted to ID-based locators, so this works
+        correctly for them.  For widgets located by ``name`` or ``path``,
+        the value may not be recognized by the server.
         """
         resp = self._send(Cmd.GET_WIDGET_DETAIL, {Key.ID: self._value})
         return resp.get("data", {})
@@ -131,7 +134,7 @@ class Widget:
             try:
                 if predicate(self):
                     return self
-            except Exception:
+            except (MatoryError, OSError):
                 pass  # transient errors (e.g. widget not ready) are retried
             if time.monotonic() >= deadline:
                 raise TimeoutError(

@@ -37,6 +37,8 @@ class Session:
         self._req_id = 0
         self._lock = threading.Lock()
         self._closed = False
+        self._health_thread: threading.Thread | None = None
+        self._health_stop = threading.Event()
         self._setup_file_logging(log_file, log_level)
         self.add_connection("default", host, port, timeout, set_default=True)
 
@@ -53,19 +55,21 @@ class Session:
         """Configure a FileHandler on the ``matory`` logger if *log_file* is given.
 
         Children like ``matory.session`` and ``matory.connection`` inherit the
-        handler via propagation.  Duplicate handlers are avoided by checking
-        the existing handler list.
+        handler via propagation.  A handler for the same file path is not
+        added twice.
         """
         if log_file is None:
             return
+        import os
         parent_logger = logging.getLogger("matory")
         parent_logger.setLevel(log_level.upper())
-        # Avoid duplicate handlers if Session is created multiple times
+        # Avoid duplicate handlers for the same file path
+        canonical = os.path.abspath(log_file)
         for h in parent_logger.handlers:
-            if isinstance(h, logging.FileHandler) and getattr(h, "baseFilename", None):
-                # FileHandler already present — just ensure level is set
-                parent_logger.setLevel(log_level.upper())
-                return
+            if isinstance(h, logging.FileHandler):
+                existing = getattr(h, "baseFilename", None)
+                if existing and os.path.abspath(existing) == canonical:
+                    return
         fh = logging.FileHandler(log_file, encoding="utf-8")
         fh.setLevel(log_level.upper())
         fh.setFormatter(logging.Formatter("%(asctime)s [%(name)s] %(levelname)s: %(message)s"))
@@ -147,6 +151,10 @@ class Session:
             self._lock = threading.Lock()
         if not hasattr(self, "_closed") or self._closed is None:
             self._closed = False
+        if not hasattr(self, "_health_thread"):
+            self._health_thread = None
+        if not hasattr(self, "_health_stop"):
+            self._health_stop = threading.Event()
         self._connections[self._default_key] = value
 
     # ── Internal helpers ──
@@ -238,8 +246,14 @@ class Session:
                   name: str | None = None, connection: str | None = None) -> TextWidget:
         """Find the first text widget matching the query.
 
-        Raises ``WidgetNotFoundError`` if no text widget is found.
+        At least one of ``keyword``, ``id``, or ``name`` must be provided.
+
+        Raises:
+            ValueError: If no locator is provided.
+            WidgetNotFoundError: If no text widget is found.
         """
+        if not keyword and id is None and name is None:
+            raise ValueError("find_text requires at least one of: keyword, id, or name")
         args: dict[str, Any] = {}
         if keyword:
             args[Key.KEYWORD] = keyword
@@ -253,7 +267,14 @@ class Session:
         texts = resp.get("data", [])
         if not isinstance(texts, list) or not texts:
             from matory.errors import WidgetNotFoundError
-            raise WidgetNotFoundError(method="keyword", value=keyword)
+            # Determine the method/value for the error message
+            if id is not None:
+                err_method, err_value = "id", id
+            elif name is not None:
+                err_method, err_value = "name", name
+            else:
+                err_method, err_value = "keyword", keyword
+            raise WidgetNotFoundError(method=err_method, value=err_value)
         first = texts[0]
         widget_id = str(first.get("id", ""))
         return TextWidget(self, Method.ID, widget_id, connection_key=connection)
@@ -306,8 +327,8 @@ class Session:
             try:
                 if predicate():
                     return
-            except Exception:
-                pass
+            except (MatoryError, OSError):
+                logger.debug("wait_until: predicate raised (will retry)", exc_info=True)
             if time.monotonic() >= deadline:
                 raise TimeoutError(
                     f"Session.wait_until timed out after {timeout}s"
@@ -335,6 +356,42 @@ class Session:
         except (MatoryError, OSError):
             return False
 
+    def start_health_check(self, interval: float = 30.0) -> None:
+        """Start a background thread that periodically checks connection health.
+
+        Logs a warning if a ping fails.  Call :meth:`stop_health_check` to
+        stop the thread.  The thread is a daemon so it will not prevent
+        interpreter shutdown.
+
+        Args:
+            interval: Seconds between health checks (default 30.0).
+        """
+        if self._health_thread is not None and self._health_thread.is_alive():
+            return  # already running
+
+        self._health_stop.clear()
+
+        def _health_loop() -> None:
+            while not self._health_stop.wait(interval):
+                for key in list(self._connections.keys()):
+                    try:
+                        self._send_cmd(Cmd.PING, {}, connection=key)
+                    except (MatoryError, OSError):
+                        logger.warning("[health] connection '%s' is unreachable", key)
+
+        self._health_thread = threading.Thread(target=_health_loop, daemon=True,
+                                                name="matory-health")
+        self._health_thread.start()
+
+    def stop_health_check(self) -> None:
+        """Stop the background health-check thread."""
+        if not hasattr(self, "_health_stop") or self._health_stop is None:
+            return
+        self._health_stop.set()
+        if self._health_thread is not None:
+            self._health_thread.join(timeout=5.0)
+            self._health_thread = None
+
     # ── Lifecycle ──
 
     def disconnect(self) -> None:
@@ -355,6 +412,7 @@ class Session:
             if self._closed:
                 return
             self._closed = True
-            for conn in self._connections.values():
-                conn.close()
-            self._connections.clear()
+        self.stop_health_check()
+        for conn in self._connections.values():
+            conn.close()
+        self._connections.clear()

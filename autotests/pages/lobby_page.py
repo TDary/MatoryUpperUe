@@ -28,6 +28,10 @@ class LobbyPage(Page):
         self.join_room_btn.click()
         return self
 
+    def enter_room(self):
+        """进入房间（join_room 的别名）。"""
+        return self.join_room()
+
     def start_game(self):
         """房主开始游戏。"""
         self.start_btn.click()

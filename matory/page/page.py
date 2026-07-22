@@ -75,6 +75,13 @@ class Page:
 
     Subclass this and define WidgetDescriptor class attributes to describe
     the UI elements on a page.
+
+    Note:
+        Widgets are lazily created and cached on first access.  If the
+        session's default connection changes after widgets have been
+        accessed, the cached widgets will still use the old connection.
+        Call :meth:`invalidate_widgets` to clear the cache and force
+        re-creation on next access.
     """
 
     def __init__(self, session: Session, *, connection: str | None = None) -> None:
@@ -84,3 +91,21 @@ class Page:
     @property
     def session(self) -> Session:
         return self._session
+
+    def invalidate_widgets(self) -> None:
+        """Clear all cached Widget instances.
+
+        Call this after changing the session's default connection if
+        Page-level widgets need to use the new connection::
+
+            session.default = "ue2"
+            page.invalidate_widgets()  # next access creates fresh widgets
+        """
+        # Remove entries that came from WidgetDescriptor (identified by
+        # their class having a _method attribute set by __new__).
+        keys_to_remove = [
+            key for key, val in self.__dict__.items()
+            if hasattr(val, "_method")
+        ]
+        for key in keys_to_remove:
+            del self.__dict__[key]

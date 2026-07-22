@@ -56,7 +56,13 @@ class Recorder:
         return self._steps
 
     def start(self) -> None:
-        """Start recording widget interactions."""
+        """Start recording widget interactions.
+
+        If already recording, this is a no-op (prevents double-start
+        from corrupting the original ``_send_cmd`` reference).
+        """
+        if self._recording:
+            return
         self._recording = True
         self._steps.clear()
         # Intercept at the Session level (instance-level, not class-level)

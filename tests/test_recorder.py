@@ -196,3 +196,21 @@ def test_recorder_generate_code_with_connection(tmp_path):
     rec.generate_code("RecordedPage", str(output))
     code = output.read_text(encoding="utf-8")
     assert 'connection="ue2"' in code
+
+
+def test_recorder_double_start_no_op(mock_conn):
+    """Calling start() twice without stop() should be a no-op, not corrupt _send_cmd."""
+    mock_conn.add_response(data=None)
+    session = _make_session(mock_conn)
+
+    rec = Recorder(session)
+    rec.start()
+    original = rec._original_send_cmd
+
+    # Second start() should be a no-op
+    rec.start()
+    assert rec._original_send_cmd is original  # still points to the real method
+
+    rec.stop()
+    # After stop, _send_cmd should be the original, not the patch
+    assert session._send_cmd.__name__ == "_send_cmd"
