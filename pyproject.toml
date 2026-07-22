@@ -16,6 +16,9 @@ matory = "matory.pytest_plugin"
 [tool.setuptools.packages.find]
 include = ["matory*"]
 
+[tool.setuptools.package-data]
+matory = ["py.typed"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

@@ -71,7 +71,8 @@ def _parse_data_field(data: Any) -> Any:
     """Normalize the data field from a server response.
 
     The server may return data as dict/list (already parsed) or as a
-    JSON string that needs a second parse.
+    JSON string that needs a second parse. If a string that looks like
+    JSON cannot be parsed, it is returned as-is with a warning logged.
     """
     if isinstance(data, (dict, list)):
         return data
@@ -79,6 +80,7 @@ def _parse_data_field(data: Any) -> Any:
         try:
             return json.loads(data)
         except (json.JSONDecodeError, ValueError):
+            # Not JSON — return the raw string (e.g. version "1.0.0")
             return data
     return data
 

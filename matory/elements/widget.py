@@ -99,8 +99,7 @@ class Widget:
         """The locator value used to find this widget."""
         return self._value
 
-    @property
-    def name(self) -> str:
+    def get_name(self) -> str:
         """Widget name from detail (performs a network call)."""
         detail = self.get_detail()
         return detail.get("name", "")

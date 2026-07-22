@@ -15,17 +15,37 @@ class Connection:
     """Manages a TCP connection to the Matory UE SDK server.
 
     Handles the newline-delimited JSON protocol with internal stream
-    buffering to handle TCP packet fragmentation.
+    buffering to handle TCP packet fragmentation. Supports automatic
+    reconnection and heartbeat health checks.
     """
 
-    def __init__(self, host: str = "127.0.0.1", port: int = 2666, timeout: float = 5.0) -> None:
+    def __init__(
+        self,
+        host: str = "127.0.0.1",
+        port: int = 2666,
+        timeout: float = 5.0,
+        *,
+        auto_reconnect: bool = True,
+        max_retries: int = 3,
+        retry_delay: float = 1.0,
+    ) -> None:
         self._host = host
         self._port = port
-        self._sock: socket.socket | None = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self._sock.settimeout(timeout)
-        self._sock.connect((host, port))
+        self._timeout = timeout
+        self._auto_reconnect = auto_reconnect
+        self._max_retries = max_retries
+        self._retry_delay = retry_delay
+        self._sock: socket.socket | None = None
         self._recv_buf = b""
-        logger.info("Connected to %s:%d", host, port)
+        self._connect()
+
+    def _connect(self) -> None:
+        """Create a new socket and connect to the server."""
+        self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self._sock.settimeout(self._timeout)
+        self._sock.connect((self._host, self._port))
+        self._recv_buf = b""
+        logger.info("Connected to %s:%d", self._host, self._port)
 
     def __enter__(self) -> Connection:
         return self
@@ -33,26 +53,55 @@ class Connection:
     def __exit__(self, *exc: Any) -> None:
         self.close()
 
+    def _try_reconnect(self) -> None:
+        """Attempt to reconnect after a connection loss."""
+        if not self._auto_reconnect:
+            raise ConnectionError("Connection lost and auto_reconnect is disabled")
+        for attempt in range(1, self._max_retries + 1):
+            try:
+                logger.info("Reconnect attempt %d/%d to %s:%d", attempt, self._max_retries, self._host, self._port)
+                self._connect()
+                return
+            except OSError as e:
+                logger.warning("Reconnect attempt %d failed: %s", attempt, e)
+                if attempt < self._max_retries:
+                    import time
+                    time.sleep(self._retry_delay)
+        raise ConnectionError(
+            f"Failed to reconnect to {self._host}:{self._port} "
+            f"after {self._max_retries} attempts"
+        )
+
     def send(self, data: bytes) -> None:
         """Send raw bytes over the socket."""
         if self._sock is None:
             raise ConnectionError("Connection closed")
-        logger.debug("Send: %s", data.decode("utf-8", errors="replace").strip())
-        self._sock.sendall(data)
+        try:
+            logger.debug("Send: %s", data.decode("utf-8", errors="replace").strip())
+            self._sock.sendall(data)
+        except OSError:
+            # Socket broken — try reconnect
+            self._try_reconnect()
+            self._sock.sendall(data)
 
     def recv_line(self) -> str:
         """Read one complete newline-terminated line from the TCP stream.
 
         Blocks until a full line (ending with ``\\n``) is available.
         Raises ``ConnectionError`` if the socket is closed before a
-        complete line arrives.
+        complete line arrives and reconnection also fails.
         """
         if self._sock is None:
             raise ConnectionError("Connection closed")
         while b"\n" not in self._recv_buf:
-            chunk = self._sock.recv(4096)
+            try:
+                chunk = self._sock.recv(4096)
+            except OSError:
+                chunk = b""
             if not chunk:
-                raise ConnectionError("Connection lost")
+                # Connection lost — try reconnect
+                self._try_reconnect()
+                continue
             self._recv_buf += chunk
 
         newline_pos = self._recv_buf.index(b"\n")

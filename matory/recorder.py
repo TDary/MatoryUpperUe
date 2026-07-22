@@ -90,8 +90,8 @@ class Recorder:
             self._session._send_cmd = self._original_send_cmd  # type: ignore[assignment]
             self._original_send_cmd = None
 
-    def generate_code(self, class_name: str, output_path: str) -> None:
-        """Generate a pytest test file from the recorded steps.
+    def render_code(self, class_name: str) -> str:
+        """Render generated pytest test code as a string.
 
         Widgets with the same (method, value) are deduplicated into a single
         Page Object descriptor.
@@ -172,6 +172,14 @@ class Recorder:
         ]
 
         code = "\n".join(lines) + "\n"
+        return code
 
+    def generate_code(self, class_name: str, output_path: str) -> None:
+        """Generate a pytest test file from the recorded steps.
+
+        Widgets with the same (method, value) are deduplicated into a single
+        Page Object descriptor.
+        """
+        code = self.render_code(class_name)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(code)

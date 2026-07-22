@@ -108,10 +108,10 @@ def test_locator_value_property(mock_conn):
     assert w.locator_value == "42"
 
 
-def test_name_property_via_detail(mock_conn):
+def test_get_name_via_detail(mock_conn):
     mock_conn.add_response(data={"type": "Button", "name": "LoginBtn", "id": 42})
     w = _make_widget(mock_conn, "id", "42")
-    assert w.name == "LoginBtn"
+    assert w.get_name() == "LoginBtn"
 
 
 def test_widget_connection_key_default_none(mock_conn):

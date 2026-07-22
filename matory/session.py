@@ -270,6 +270,19 @@ class Session:
                 )
             time.sleep(interval)
 
+    # ── Health Check ──
+
+    def is_alive(self, *, connection: str | None = None) -> bool:
+        """Check if a connection is alive by sending a lightweight command.
+
+        Returns True if the server responds, False if the connection is dead.
+        """
+        try:
+            self._send_cmd(Cmd.GET_SDK_VERSION, {}, connection=connection)
+            return True
+        except Exception:
+            return False
+
     # ── Lifecycle ──
 
     def disconnect(self) -> None:

@@ -51,7 +51,7 @@ def test_connection_send_and_recv(mock_socket_cls):
     fake = FakeSocket([_make_response(data="1.0.0")])
     mock_socket_cls.return_value = fake
 
-    conn = Connection("127.0.0.1", 2666, 5.0)
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False)
     data = encode_request(1, "GetSdkVersion", {})
     conn.send(data)
     line = conn.recv_line()
@@ -68,7 +68,7 @@ def test_connection_context_manager(mock_socket_cls):
     fake = FakeSocket([_make_response(data="1.0.0")])
     mock_socket_cls.return_value = fake
 
-    with Connection("127.0.0.1", 2666, 5.0) as conn:
+    with Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False) as conn:
         pass
 
     assert fake.closed is True
@@ -78,13 +78,12 @@ def test_connection_context_manager(mock_socket_cls):
 def test_connection_recv_line_buffers_across_calls(mock_socket_cls):
     """TCP may split one message across multiple recv calls."""
     full = _make_response(data="hello")
-    # Split the response in the middle
     part1 = full[:10]
     part2 = full[10:]
     fake = FakeSocket([part1, part2])
     mock_socket_cls.return_value = fake
 
-    conn = Connection("127.0.0.1", 2666, 5.0)
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False)
     line = conn.recv_line()
     conn.close()
 
@@ -100,7 +99,7 @@ def test_connection_recv_line_two_messages(mock_socket_cls):
     fake = FakeSocket([msg1 + msg2])
     mock_socket_cls.return_value = fake
 
-    conn = Connection("127.0.0.1", 2666, 5.0)
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False)
     line1 = conn.recv_line()
     line2 = conn.recv_line()
     conn.close()
@@ -111,11 +110,54 @@ def test_connection_recv_line_two_messages(mock_socket_cls):
 
 @patch("matory.client.connection.socket.socket")
 def test_connection_recv_line_connection_error(mock_socket_cls):
-    """Empty recv should raise ConnectionError."""
-    fake = FakeSocket([])  # no data
+    """Empty recv should raise ConnectionError when auto_reconnect is False."""
+    fake = FakeSocket([])
     mock_socket_cls.return_value = fake
 
-    conn = Connection("127.0.0.1", 2666, 5.0)
-    with pytest.raises(MatoryConnectionError, match="Connection lost"):
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False)
+    with pytest.raises(MatoryConnectionError):
+        conn.recv_line()
+    conn.close()
+
+
+@patch("matory.client.connection.socket.socket")
+def test_connection_reconnect_on_recv_failure(mock_socket_cls):
+    """Connection should auto-reconnect when recv fails."""
+    # First socket: returns empty (connection lost)
+    fake1 = FakeSocket([])
+    # Second socket: returns valid response after reconnect
+    fake2 = FakeSocket([_make_response(data="reconnected")])
+    mock_socket_cls.side_effect = [fake1, fake2]
+
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=True, max_retries=3)
+    line = conn.recv_line()
+    conn.close()
+
+    assert json.loads(line)["data"] == "reconnected"
+
+
+@patch("matory.client.connection.socket.socket")
+def test_connection_reconnect_max_retries_exhausted(mock_socket_cls):
+    """Should raise ConnectionError after max retries exhausted."""
+    fake1 = FakeSocket([])
+    # Reconnect attempts all fail (connect raises)
+    failing_sock = FakeSocket([])
+    failing_sock.connect = lambda addr: (_ for _ in ()).throw(OSError("refused"))
+    mock_socket_cls.side_effect = [fake1, failing_sock, failing_sock, failing_sock]
+
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=True, max_retries=3, retry_delay=0)
+    with pytest.raises(MatoryConnectionError, match="Failed to reconnect"):
+        conn.recv_line()
+    conn.close()
+
+
+@patch("matory.client.connection.socket.socket")
+def test_connection_auto_reconnect_disabled(mock_socket_cls):
+    """When auto_reconnect is False, connection loss raises immediately."""
+    fake = FakeSocket([])
+    mock_socket_cls.return_value = fake
+
+    conn = Connection("127.0.0.1", 2666, 5.0, auto_reconnect=False)
+    with pytest.raises(MatoryConnectionError):
         conn.recv_line()
     conn.close()
